@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS SCD South Summit 2026 — Photobooth</title>
+  <meta name="description" content="Snap your Summit selfie at AWS Student Community Day: South Summit 2026. Add frames, stickers and download your memory.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/photobooth.css">
+</head>
+<body>
+
+  <svg class="defs" aria-hidden="true">
+    <symbol id="chip-icon" viewBox="0 0 70 70">
+      <rect width="70" height="70" fill="var(--chip-bg, #FFFFFF)"/>
+      <path fill="#44b3fe" fill-rule="evenodd" d="M10 0H20V10H30V0H40V10H50V0H60V10H70V20H60V30H70V40H60V50H70V60H60V70H50V60H40V70H30V60H20V70H10V60H0V50H10V40H0V30H10V20H0V10H10ZM20 20H50V50H20Z"/>
+    </symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.2"/>
+      <path d="M12 2v2.5M12 19.5v2.5M2 12h2.5M19.5 12h2.5M4.93 4.93l1.8 1.8M17.27 17.27l1.8 1.8M4.93 19.07l1.8-1.8M17.27 6.73l1.8-1.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24">
+      <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-camera" viewBox="0 0 24 24">
+      <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="12" cy="13" r="4" stroke="currentColor" stroke-width="2" fill="none"/>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24">
+      <polyline points="23 4 23 10 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-flip" viewBox="0 0 24 24">
+      <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3m10 0h3a2 2 0 002-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </symbol>
+  </svg>
+
+  <!-- HEADER -->
+  <header class="pb-header">
+    <div class="header-deco" aria-hidden="true">
+      <span class="brand-box bb-pink" style="top:0;left:0;width:52px;height:52px;"></span>
+      <span class="brand-box bb-blue" style="bottom:0;right:0;width:52px;height:52px;"></span>
+      <span class="brand-box bb-orange" style="top:0;right:52px;width:26px;height:26px;"></span>
+      <span class="brand-box bb-green" style="bottom:0;left:52px;width:26px;height:26px;"></span>
+      <span class="brand-box bb-purple" style="top:0;left:52px;width:26px;height:26px;"></span>
+    </div>
+    <div class="pb-header-inner">
+      <div class="pb-brand">
+        <div class="pb-chip-wrap">
+          <img class="chip" src="assets/awssbg-logo.svg" alt="AWS Student Builder Group" width="36" height="36">
+        </div>
+        <div class="pb-brand-text">
+          <span class="pb-brand-title">AWS SCD: SOUTH SUMMIT 2026</span>
+          <span class="pb-brand-sub">// PHOTOBOOTH</span>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark mode" title="Toggle theme">
+        <span class="theme-toggle-track">
+          <svg class="icon-sun" aria-hidden="true"><use href="#icon-sun"></use></svg>
+          <svg class="icon-moon" aria-hidden="true"><use href="#icon-moon"></use></svg>
+        </span>
+        <span class="theme-toggle-thumb"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="pb-main">
+
+    <div class="deco-layer" aria-hidden="true">
+      <span class="brand-box bb-green" style="top:260px;right:0;width:52px;height:52px;"></span>
+      <span class="brand-box bb-blue" style="top:312px;right:0;width:52px;height:52px;"></span>
+      <span class="brand-box bb-purple" style="bottom:200px;left:0;width:52px;height:52px;"></span>
+      <span class="brand-box bb-orange" style="bottom:148px;left:0;width:52px;height:52px;"></span>
+    </div>
+
+    <div class="pb-layout">
+
+      <!-- LEFT PANEL -->
+      <aside class="pb-panel">
+
+        <!-- Frame picker -->
+        <div class="pb-section">
+          <p class="pb-section-label"><span class="label-num">01</span> FRAME</p>
+          <div class="frame-picker" id="framePicker">
+            <button class="frame-opt active" data-frame="none" id="frameOptNone">
+              <span class="frame-preview fp-none"></span>
+              <span>None</span>
+            </button>
+            <button class="frame-opt" data-frame="summit" id="frameOptSummit">
+              <span class="frame-preview fp-summit"></span>
+              <span>Summit</span>
+            </button>
+            <button class="frame-opt" data-frame="blue" id="frameOptBlue">
+              <span class="frame-preview fp-blue"></span>
+              <span>Blue</span>
+            </button>
+            <button class="frame-opt" data-frame="orange" id="frameOptOrange">
+              <span class="frame-preview fp-orange"></span>
+              <span>Orange</span>
+            </button>
+            <button class="frame-opt" data-frame="pink" id="frameOptPink">
+              <span class="frame-preview fp-pink"></span>
+              <span>Pink</span>
+            </button>
+            <button class="frame-opt" data-frame="green" id="frameOptGreen">
+              <span class="frame-preview fp-green"></span>
+              <span>Green</span>
+            </button>
+            <button class="frame-opt" data-frame="purple" id="frameOptPurple">
+              <span class="frame-preview fp-purple"></span>
+              <span>Purple</span>
+            </button>
+            <button class="frame-opt" data-frame="pixel" id="frameOptPixel">
+              <span class="frame-preview fp-pixel"></span>
+              <span>Pixel</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stickers -->
+        <div class="pb-section">
+          <p class="pb-section-label"><span class="label-num">02</span> STICKERS</p>
+          <p class="pb-section-hint">Click to add &middot; drag to move &middot; double-click to remove</p>
+          <div class="sticker-grid" id="stickerGrid">
+            <button class="sticker-btn" data-sticker="rocket" title="Rocket">🚀</button>
+            <button class="sticker-btn" data-sticker="cloud" title="Cloud">☁️</button>
+            <button class="sticker-btn" data-sticker="lightning" title="Lightning">⚡</button>
+            <button class="sticker-btn" data-sticker="fire" title="Fire">🔥</button>
+            <button class="sticker-btn" data-sticker="bulb" title="Idea">💡</button>
+            <button class="sticker-btn" data-sticker="robot" title="Robot">🤖</button>
+            <button class="sticker-btn" data-sticker="target" title="Target">🎯</button>
+            <button class="sticker-btn" data-sticker="laptop" title="Laptop">💻</button>
+            <button class="sticker-btn" data-sticker="star" title="Star">🌟</button>
+            <button class="sticker-btn" data-sticker="trophy" title="Trophy">🏆</button>
+            <button class="sticker-btn" data-sticker="party" title="Party">🎉</button>
+            <button class="sticker-btn" data-sticker="brain" title="Brain">🧠</button>
+            <button class="sticker-btn" data-sticker="satellite" title="Satellite">📡</button>
+            <button class="sticker-btn" data-sticker="crystal" title="Crystal Ball">🔮</button>
+            <button class="sticker-btn" data-sticker="gear" title="Gear">⚙️</button>
+            <button class="sticker-btn" data-sticker="globe" title="Globe">🌐</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btnClearStickers" style="margin-top:8px;width:100%;">Clear Stickers</button>
+        </div>
+
+        <!-- Caption -->
+        <div class="pb-section">
+          <p class="pb-section-label"><span class="label-num">03</span> CAPTION</p>
+          <input type="text" id="captionInput" class="caption-input" placeholder="e.g. Cloud × AI: Build. Power. Lead." maxlength="60">
+          <div class="caption-color-row">
+            <span class="cc-label">Color:</span>
+            <button class="cc-btn active" data-color="#ffffff" id="ccWhite" title="White"></button>
+            <button class="cc-btn" data-color="#44b3fe" id="ccBlue" title="Blue"></button>
+            <button class="cc-btn" data-color="#fc9907" id="ccOrange" title="Orange"></button>
+            <button class="cc-btn" data-color="#07e383" id="ccGreen" title="Green"></button>
+            <button class="cc-btn" data-color="#fe57ea" id="ccPink" title="Pink"></button>
+            <button class="cc-btn" data-color="#a759ff" id="ccPurple" title="Purple"></button>
+            <button class="cc-btn cc-dark" data-color="#161c24" id="ccDark" title="Dark"></button>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- CENTER -->
+      <section class="pb-center">
+
+        <div class="pb-viewfinder" id="viewfinder">
+          <div class="frame-overlay" id="frameOverlay" data-frame="none"></div>
+          <video id="cameraFeed" class="pb-video" autoplay playsinline muted></video>
+          <canvas id="photoCanvas" class="pb-canvas" hidden></canvas>
+          <div class="cam-error" id="camError" hidden>
+            <svg width="52" height="52" fill="none" viewBox="0 0 24 24"><use href="#icon-camera"></use></svg>
+            <p id="camErrorMsg">Camera access denied or unavailable.</p>
+            <button class="btn btn-ghost" id="btnRetryCamera">Try Again</button>
+          </div>
+          <div class="sticker-layer" id="stickerLayer"></div>
+          <div class="caption-overlay" id="captionOverlay"></div>
+          <div class="countdown-overlay" id="countdownOverlay" hidden>
+            <span class="countdown-num" id="countdownNum">3</span>
+          </div>
+          <div class="flash-overlay" id="flashOverlay"></div>
+          <div class="vf-corner vf-tl"></div>
+          <div class="vf-corner vf-tr"></div>
+          <div class="vf-corner vf-bl"></div>
+          <div class="vf-corner vf-br"></div>
+        </div>
+
+        <div class="cam-controls">
+          <div class="mode-btns">
+            <button class="mode-btn active" id="btnSingle" data-mode="single">Single</button>
+            <button class="mode-btn" id="btnStrip" data-mode="strip">Strip ×3</button>
+          </div>
+          <div class="cam-action-btns">
+            <button class="btn btn-ghost btn-sm" id="btnFlip" title="Flip Camera">
+              <svg width="15" height="15"><use href="#icon-flip"></use></svg> Flip
+            </button>
+            <button class="btn btn-ghost btn-sm" id="btnRetake" title="Retake" hidden>
+              <svg width="15" height="15"><use href="#icon-refresh"></use></svg> Retake
+            </button>
+          </div>
+        </div>
+
+        <button class="btn btn-capture" id="btnCapture">
+          <svg width="20" height="20"><use href="#icon-camera"></use></svg>
+          <span id="captureLabel">Snap Photo</span>
+        </button>
+
+        <button class="btn btn-download" id="btnDownload" hidden>
+          <svg width="20" height="20"><use href="#icon-download"></use></svg>
+          Download Photo
+        </button>
+
+      </section>
+
+      <!-- RIGHT: Gallery -->
+      <aside class="pb-gallery">
+        <div class="gallery-header">
+          <p class="pb-section-label"><span class="label-num">04</span> GALLERY</p>
+          <button class="btn btn-ghost btn-sm" id="btnClearGallery">
+            <svg width="13" height="13"><use href="#icon-trash"></use></svg> Clear
+          </button>
+        </div>
+        <div class="gallery-list" id="galleryList">
+          <div class="gallery-empty">
+            <span>📷</span>
+            <p>Your photos appear here</p>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="pb-footer">
+    <div class="primer-edge primer-edge--bottom" aria-hidden="true">
+      <span class="brand-box pe-blue"></span>
+      <span class="brand-box pe-green"></span>
+      <span class="brand-box pe-purple"></span>
+      <span class="brand-box pe-orange"></span>
+      <span class="brand-box pe-purple-end"></span>
+    </div>
+    <div class="pb-footer-inner">
+      <span>&copy; 2026 AWS Student Builder Groups &middot; South Luzon</span>
+      <span class="footer-tag">Cloud × AI: Build. Power. Lead.</span>
+    </div>
+  </footer>
+
+  <script src="js/photobooth.js"></script>
+</body>
+</html>

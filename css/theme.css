@@ -1,0 +1,577 @@
+/* =========================================================
+   SCD South Summit 2026 — Theme
+   Event primer: grid background + colorful visual boxes
+   Default: light mode  |  Toggle: dark mode
+   ========================================================= */
+
+:root {
+  /* Accent palette (event primer email header) */
+  --blue: #44b3fe;
+  --purple: #a759ff;
+  --orange: #fc9907;
+  --green: #07e383;
+  --pink: #fe57ea;
+  --ink-block: #161C24;
+
+  /* Grid — shared cell size for line grid + colored boxes */
+  --grid-size: 52px;
+  --grid-line: 1px;
+
+  /* Typography — event primer monospace */
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  --font-sans: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+
+  /* Layout */
+  --container: 1280px;
+  --nav-h: calc(var(--grid-size) * 2);
+  --header-h: calc(var(--grid-size) * 4);
+
+  /* Transitions */
+  --theme-ease: background-color .25s ease, color .25s ease, border-color .25s ease;
+}
+
+/* ---------- LIGHT MODE (default) ---------- */
+:root,
+html[data-theme="light"] {
+  --bg: #FFFFFF;
+  --bg-2: #F5F7FB;
+  --bg-3: #EEF1F6;
+  --bg-elevated: #FFFFFF;
+  --bg-overlay: rgba(255, 255, 255, 0.72);
+
+  --ink: #0B1526;
+  --cloud: #F5F7FB;
+  --text: #0B1526;
+  --text-strong: #000000;
+  --muted: #5B6584;
+  --muted-2: #8B96B3;
+
+  --line: rgba(11, 21, 38, 0.09);
+  --line-strong: rgba(11, 21, 38, 0.14);
+
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --nav-link: #5B6584;
+  --nav-link-active: #0B1526;
+
+  --btn-ghost-border: rgba(11, 21, 38, 0.18);
+  --btn-ghost-color: #0B1526;
+  --btn-ghost-hover: var(--blue);
+
+  --clock-bg: #FFFFFF;
+  --clock-border: var(--blue);
+  --clock-num: #0B1526;
+
+  --card-bg: #FFFFFF;
+  --card-bg-alt: #F5F7FB;
+  --card-border: rgba(11, 21, 38, 0.1);
+
+  --marquee-fade: var(--bg);
+
+  --modal-overlay: rgba(245, 247, 251, 0.85);
+  --hamburger: #0B1526;
+
+  --footer-link: #3A4661;
+  --sibling-bg: #F5F7FB;
+
+  --sponsor-slot-bg: #FFFFFF;
+  --sponsor-slot-border: #C9D3E0;
+  --sponsor-slot-text: #94A2B8;
+
+  --teal: #0AA98F;
+  --about-text: #3A4661;
+  --about-border: #E1E7F0;
+
+  --proto-bg: #EEF1F6;
+  --sticky-bg: #FFFFFF;
+
+  color-scheme: light;
+}
+
+/* ---------- DARK MODE ---------- */
+html[data-theme="dark"] {
+  --bg: #12182A;
+  --bg-2: #1A2138;
+  --bg-3: #222B45;
+  --bg-elevated: #1A2138;
+  --bg-overlay: rgba(18, 24, 42, 0.72);
+
+  /* Invert ink/cloud so section-light & about text stay readable */
+  --ink: #F5F7FB;
+  --cloud: #1A2138;
+  --text: #F5F7FB;
+  --text-strong: #FFFFFF;
+  --muted: #A8B0C7;
+  --muted-2: #8B96B3;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+
+  --nav-bg: rgba(18, 24, 42, 0.92);
+  --nav-link: #A8B0C7;
+  --nav-link-active: #FFFFFF;
+
+  --btn-ghost-border: rgba(255, 255, 255, 0.14);
+  --btn-ghost-color: #FFFFFF;
+  --btn-ghost-hover: var(--blue);
+
+  --clock-bg: #0B101D;
+  --clock-border: var(--blue);
+  --clock-num: #FFFFFF;
+
+  --card-bg: #1A2138;
+  --card-bg-alt: #222B45;
+  --card-border: rgba(255, 255, 255, 0.08);
+
+  --marquee-fade: var(--bg);
+
+  --modal-overlay: rgba(6, 9, 17, 0.85);
+  --hamburger: #FFFFFF;
+
+  --footer-link: #C7D0E4;
+  --sibling-bg: #1A2138;
+
+  --sponsor-slot-bg: #222B45;
+  --sponsor-slot-border: rgba(255, 255, 255, 0.14);
+  --sponsor-slot-text: #A8B0C7;
+
+  --teal: #2BD4AD;
+  --about-text: #C7D0E4;
+  --about-border: rgba(255, 255, 255, 0.1);
+
+  --proto-bg: #222B45;
+  --sticky-bg: #1A2138;
+
+  color-scheme: dark;
+}
+
+/* ---------- Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  position: relative;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--line) var(--grid-line), transparent var(--grid-line)),
+    linear-gradient(90deg, var(--line) var(--grid-line), transparent var(--grid-line));
+  background-size: var(--grid-size) var(--grid-size);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  padding-bottom: calc(var(--grid-size) * 1.25);
+  transition: var(--theme-ease);
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  list-style: none;
+}
+
+button {
+  font: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.wrap {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 calc(var(--grid-size) * 2);
+}
+
+/* ---------- Grid background (event primer) — body carries the scroll grid ---------- */
+.grid-bg,
+.section-light.grid-bg,
+.grid-bg.light {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* ---------- Fixed site header: AWS logo (2×2) above nav (2×2) ---------- */
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  height: var(--header-h);
+  display: grid;
+  grid-template-rows: var(--nav-h) var(--nav-h);
+  pointer-events: none;
+}
+
+.nav-aws-logo {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--nav-h);
+  height: var(--nav-h);
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: auto;
+  z-index: 2;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity .25s ease, transform .25s ease, visibility .25s ease;
+}
+
+.site-header.is-scrolled .nav-aws-logo,
+html[data-page="about"] .nav-aws-logo,
+html[data-page="merch"] .nav-aws-logo {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px);
+}
+
+.site-header .nav {
+  pointer-events: auto;
+  align-self: stretch;
+}
+
+/* Primer edge boxes — scroll with page, 1×1 grid cells */
+.primer-edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.primer-edge .brand-box {
+  width: var(--grid-size);
+  height: var(--grid-size);
+}
+
+.primer-edge--top .pe-pink {
+  top: 0;
+  left: 0;
+  --box-c: var(--pink);
+}
+
+.primer-edge--top .pe-ink {
+  top: var(--grid-size);
+  left: 0;
+  background: var(--ink-block);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primer-edge--top .pe-ink svg {
+  width: 52%;
+  height: 52%;
+  display: block;
+}
+
+.primer-edge--bottom .pe-blue {
+  bottom: 0;
+  left: 0;
+  --box-c: var(--blue);
+}
+
+.primer-edge--bottom .pe-green {
+  bottom: 0;
+  left: var(--grid-size);
+  --box-c: var(--green);
+}
+
+.primer-edge--bottom .pe-purple {
+  bottom: 0;
+  left: calc(var(--grid-size) * 2);
+  --box-c: var(--purple);
+}
+
+.primer-edge--bottom .pe-orange {
+  bottom: var(--grid-size);
+  right: var(--grid-size);
+  --box-c: var(--orange);
+}
+
+.primer-edge--bottom .pe-purple-end {
+  bottom: 0;
+  right: 0;
+  --box-c: var(--purple);
+}
+
+.page,
+footer,
+.sticky-cta,
+.modal-overlay,
+.proto-badge,
+.amazon-q-bot,
+.amazon-q-wrap,
+.mobile-panel {
+  position: relative;
+  z-index: 1;
+}
+.mobile-panel { z-index: 190; }
+.modal-overlay { z-index: 300; }
+.sticky-cta { z-index: 150; }
+.proto-badge { z-index: 120; }
+.amazon-q-bot,
+.amazon-q-wrap { z-index: 125; }
+
+/* ---------- Colorful visual boxes ---------- */
+.deco-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.brand-box {
+  position: absolute;
+  width: var(--grid-size);
+  height: var(--grid-size);
+  background: var(--box-c, var(--blue));
+}
+
+.brand-box.sm {
+  width: calc(var(--grid-size) * 0.75);
+  height: calc(var(--grid-size) * 0.75);
+}
+
+.brand-box.lg {
+  width: calc(var(--grid-size) * 2);
+  height: calc(var(--grid-size) * 2);
+}
+
+/* Color helpers */
+.bb-blue { --box-c: var(--blue); }
+.bb-pink { --box-c: var(--pink); }
+.bb-green { --box-c: var(--green); }
+.bb-orange { --box-c: var(--orange); }
+.bb-purple { --box-c: var(--purple); }
+
+/* --- Pattern: primer plus / cross (hero right) --- */
+.deco-plus .b1 { top: calc(var(--grid-size) * 2); right: calc(var(--grid-size) * 4); --box-c: var(--blue); }
+.deco-plus .b2 { top: calc(var(--grid-size) * 3); right: calc(var(--grid-size) * 5); --box-c: var(--pink); }
+.deco-plus .b3 { top: calc(var(--grid-size) * 3); right: calc(var(--grid-size) * 3); --box-c: var(--orange); }
+.deco-plus .b4 { top: calc(var(--grid-size) * 4); right: calc(var(--grid-size) * 4); --box-c: var(--green); }
+
+/* --- Pattern: staggered edge column --- */
+.deco-stagger .b1 { top: calc(var(--grid-size) * 1); left: 0; --box-c: var(--green); }
+.deco-stagger .b2 { top: calc(var(--grid-size) * 3); left: var(--grid-size); --box-c: var(--purple); }
+.deco-stagger .b3 { top: calc(var(--grid-size) * 5); left: 0; --box-c: var(--blue); }
+.deco-stagger .b4 { top: calc(var(--grid-size) * 7); left: var(--grid-size); --box-c: var(--orange); }
+.deco-stagger .b5 { top: calc(var(--grid-size) * 9); left: 0; --box-c: var(--pink); }
+
+/* --- Pattern: corner frames (heading sections) --- */
+.deco-corners .b1 { top: 0; left: 0; --box-c: var(--pink); }
+.deco-corners .b2 { top: var(--grid-size); left: var(--grid-size); --box-c: var(--blue); }
+.deco-corners .b3 { top: calc(var(--grid-size) * 4); right: 0; --box-c: var(--orange); }
+.deco-corners .b4 { bottom: calc(var(--grid-size) * 2); right: var(--grid-size); --box-c: var(--green); }
+.deco-corners .b5 { bottom: var(--grid-size); right: calc(var(--grid-size) * 2); --box-c: var(--purple); }
+
+/* --- Pattern: bottom staircase --- */
+.deco-stair-bl .b1 { bottom: 0; left: 0; --box-c: var(--orange); }
+.deco-stair-bl .b2 { bottom: var(--grid-size); left: var(--grid-size); --box-c: var(--pink); }
+.deco-stair-bl .b3 { bottom: calc(var(--grid-size) * 2); left: calc(var(--grid-size) * 2); --box-c: var(--purple); }
+.deco-stair-bl .b4 { top: var(--grid-size); right: calc(var(--grid-size) * 2); --box-c: var(--blue); }
+.deco-stair-bl .b5 { top: calc(var(--grid-size) * 2); right: var(--grid-size); --box-c: var(--green); }
+
+/* --- Pattern: V cluster (bottom) --- */
+.deco-v .b1 { bottom: calc(var(--grid-size) * 2); left: calc(50% - var(--grid-size) * 1.5); --box-c: var(--purple); }
+.deco-v .b2 { bottom: calc(var(--grid-size) * 2); left: calc(50% + var(--grid-size) * 0.5); --box-c: var(--blue); }
+.deco-v .b3 { bottom: var(--grid-size); left: calc(50% - var(--grid-size) * 0.5); --box-c: var(--pink); }
+.deco-v .b4 { top: var(--grid-size); left: var(--grid-size); --box-c: var(--green); }
+.deco-v .b5 { top: calc(var(--grid-size) * 2); left: calc(var(--grid-size) * 2); --box-c: var(--orange); }
+
+/* --- Pattern: edge scatter --- */
+.deco-scatter .b1 { top: calc(var(--grid-size) * 2); right: 0; --box-c: var(--green); }
+.deco-scatter .b2 { top: calc(var(--grid-size) * 3); right: 0; --box-c: var(--blue); }
+.deco-scatter .b3 { top: 50%; right: 0; --box-c: var(--pink); }
+.deco-scatter .b4 { bottom: calc(var(--grid-size) * 3); left: 0; --box-c: var(--orange); }
+.deco-scatter .b5 { bottom: calc(var(--grid-size) * 2); left: 0; --box-c: var(--purple); }
+
+/* Floating purple accent (primer cover) */
+.box-floating {
+  position: absolute;
+  width: var(--grid-size);
+  height: var(--grid-size);
+  background: var(--purple);
+  bottom: calc(var(--grid-size) * 3);
+  left: calc(var(--grid-size) * 2);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ---------- Theme toggle (Modern Cyber-Pill Switch) ---------- */
+.theme-toggle {
+  position: relative;
+  width: 58px;
+  height: 32px;
+  border-radius: 20px;
+  border: 1px solid var(--line-strong, rgba(0, 0, 0, 0.15));
+  background: var(--bg-3, #E5E7EB);
+  padding: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: none;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.theme-toggle:hover {
+  border-color: var(--orange, #FC9907);
+  box-shadow: 0 0 12px rgba(252, 153, 7, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.theme-toggle-track {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  transition: transform 0.3s ease, opacity 0.3s ease, color 0.3s ease;
+}
+
+.theme-toggle .icon-sun {
+  color: #D97706;
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+.theme-toggle .icon-moon {
+  color: #8B96B3;
+  opacity: 0.6;
+  transform: rotate(-20deg);
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FC9907, #F59E0B);
+  box-shadow: 0 2px 6px rgba(252, 153, 7, 0.4);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s ease, box-shadow 0.3s ease;
+  z-index: 2;
+}
+
+/* Dark Mode Pill State */
+html[data-theme="dark"] .theme-toggle {
+  background: #161C24;
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .theme-toggle:hover {
+  border-color: var(--blue, #44B3FE);
+  box-shadow: 0 0 14px rgba(68, 179, 254, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .theme-toggle .icon-sun {
+  opacity: 0.5;
+  color: #6B7280;
+  transform: rotate(20deg);
+}
+
+html[data-theme="dark"] .theme-toggle .icon-moon {
+  opacity: 1;
+  color: #44B3FE;
+  transform: rotate(0deg);
+}
+
+html[data-theme="dark"] .theme-toggle-thumb {
+  transform: translateX(26px);
+  background: linear-gradient(135deg, #44B3FE, #3B82F6);
+  box-shadow: 0 2px 8px rgba(68, 179, 254, 0.5);
+}
+
+/* ---------- Chip / AWS mark shared theme bits ---------- */
+.chip {
+  display: block;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.brand .chip,
+.nav-inner .chip {
+  width: calc(var(--grid-size) * 0.75);
+  height: calc(var(--grid-size) * 0.75);
+}
+
+.sc-top .chip,
+.merch-top .chip,
+.mark .chip {
+  width: 28px;
+  height: 28px;
+}
+
+.s-modal-head .chip {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 12px;
+}
+
+.aws-mark {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-strong);
+}
+
+.aws-mark .word {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+
+.aws-mark svg {
+  width: 32px;
+  height: 10px;
+}
+
+.aws-mark svg path {
+  stroke: currentColor;
+}
+
+@media (max-width: 720px) {
+  .deco-layer .brand-box:nth-child(n+4) {
+    display: none;
+  }
+}

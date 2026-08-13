@@ -1,0 +1,22 @@
+{
+  "name": "aws-scd-south-summit-photobooth",
+  "version": "1.0.0",
+  "description": "Interactive Web Photobooth for AWS Student Community Day: South Summit 2026",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve ./ -p 3000",
+    "dev": "serve ./ -p 3000"
+  },
+  "keywords": [
+    "aws",
+    "photobooth",
+    "calabarzon",
+    "south-summit",
+    "webcam"
+  ],
+  "author": "AWS Student Builder Groups - South Luzon",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
