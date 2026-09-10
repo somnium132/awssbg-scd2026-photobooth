@@ -431,6 +431,379 @@
       ctx.strokeStyle = '#44b3fe';
       ctx.lineWidth = 3;
       ctx.strokeRect(3, 3, w - 6, h - 6);
+
+    } else if (frame === 'blueprint') {
+      // Drafting sheet: grid, ink rail, tick marks, title block
+      ctx.save();
+      const kl   = Math.max(3, Math.round(Math.min(w, h) * 0.006));
+      const b    = Math.max(10, Math.min(22 - kl, Math.round(Math.min(w, h) * 0.032))); // capped clear of the caption line
+      const cell = Math.round(Math.min(w, h) / 12);
+      const cyan = '#42b2fe';
+
+      // Faint grid
+      ctx.globalAlpha = 0.10;
+      ctx.strokeStyle = cyan;
+      ctx.lineWidth = Math.max(1, Math.round(kl / 3));
+      ctx.beginPath();
+      for (let x = cell; x < w; x += cell) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = cell; y < h; y += cell) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Ink rail, shadowed inward
+      ctx.shadowColor = 'rgba(0,0,0,.55)';
+      ctx.shadowBlur = Math.round(b * 1.2);
+      ctx.strokeStyle = '#0e1420';
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+      ctx.shadowBlur = 0;
+
+      // Keyline
+      ctx.strokeStyle = cyan;
+      ctx.lineWidth = kl;
+      ctx.strokeRect(b + kl / 2, b + kl / 2, w - (b + kl) , h - (b + kl));
+
+      // Edge ticks
+      const tk   = Math.min(9, Math.round(b * 0.5));
+      const step = cell / 2;
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = cyan;
+      ctx.lineWidth = kl;
+      ctx.beginPath();
+      for (let x = step; x < w - step; x += step) {
+        const len = (Math.round(x / step) % 2 === 0) ? tk : tk * 0.55;
+        ctx.moveTo(x, 0); ctx.lineTo(x, len);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for (let x = step; x < w - step; x += step) {
+        const len = (Math.round(x / step) % 2 === 0) ? tk : tk * 0.55;
+        ctx.moveTo(x, h); ctx.lineTo(x, h - len);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Corner marks
+      const cm = Math.round(Math.min(w, h) * 0.055);
+      const q  = b + kl + 6;
+      const bracket = (bx, by, dx, dy) => {
+        ctx.beginPath();
+        ctx.moveTo(bx, by + dy * cm);
+        ctx.lineTo(bx, by);
+        ctx.lineTo(bx + dx * cm, by);
+        ctx.stroke();
+      };
+      ctx.strokeStyle = cyan;
+      ctx.lineWidth = kl;
+      bracket(q, q, 1, 1);
+      bracket(w - q, q, -1, 1);
+      bracket(q, h - q, 1, -1);
+      bracket(w - q, h - q, -1, -1);
+
+      // Title block, only when it fits above the face area
+      const bfs = Math.max(11, Math.round(Math.min(w, h) * 0.027));
+      const bph = Math.round(bfs * 1.9);
+      const bpy = b + kl + 4;
+      if (bpy + bph <= h * 0.10) {
+        ctx.font = 'bold ' + bfs + 'px "IBM Plex Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        const tag   = 'SCD · SS 2026';
+        const sheet = 'SHEET 01';
+        const tw    = ctx.measureText(tag).width;
+        const sw    = ctx.measureText(sheet).width;
+        const pad   = Math.round(bfs * 0.8);
+        const tbase = bpy + Math.round(bph * 0.68);
+        ctx.fillStyle = 'rgba(14,20,32,.92)';
+        ctx.fillRect(b + kl + 4, bpy, tw + pad * 2, bph);
+        ctx.fillRect(w - b - kl - 4 - (sw + pad * 2), bpy, sw + pad * 2, bph);
+        ctx.fillStyle = cyan;
+        ctx.fillText(tag, b + kl + 4 + pad, tbase);
+        ctx.fillStyle = '#fc9907';
+        ctx.fillText(sheet, w - b - kl - 4 - sw - pad, tbase);
+      }
+      ctx.restore();
+
+    } else if (frame === 'badge') {
+      // Conference badge: header block, tier stripes, lanyard slot
+      ctx.save();
+      const kl   = Math.max(3, Math.round(Math.min(w, h) * 0.006));
+      const b    = Math.max(8, Math.min(22 - kl, Math.round(Math.min(w, h) * 0.022)));
+      const hb   = Math.round(h * 0.095);
+      const fs   = Math.max(10, Math.round(hb * 0.34));
+      const base = Math.round(hb / 2 + fs * 0.35);
+      const st   = Math.min(9, Math.max(4, Math.round(h * 0.0125)));
+      const ink  = '#161c24';
+      const cols = ['#44b3fe', '#07e383', '#a759ff', '#fc9907', '#fe57ea'];
+      const seg  = w / cols.length;
+
+      // Scrim: lifts the caption instead of covering it
+      const sc = ctx.createLinearGradient(0, h - h * 0.22, 0, h);
+      sc.addColorStop(0, 'rgba(11,21,38,0)');
+      sc.addColorStop(1, 'rgba(11,21,38,.45)');
+      ctx.fillStyle = sc;
+      ctx.fillRect(0, h - h * 0.22, w, h * 0.22);
+
+      // Card edge
+      ctx.shadowColor = 'rgba(0,0,0,.5)';
+      ctx.shadowBlur = Math.round(b * 1.6);
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+      ctx.shadowBlur = 0;
+
+      // Header block
+      ctx.fillStyle = ink;
+      ctx.fillRect(0, 0, w, hb);
+
+      // Tier stripes
+      for (let i = 0; i < cols.length; i++) {
+        ctx.fillStyle = cols[i];
+        ctx.fillRect(i * seg, 0, seg, st);
+        ctx.fillRect(i * seg, h - st, seg, st);
+      }
+
+      // Lanyard slot
+      const slotW = Math.round(w * 0.13);
+      const slotH = Math.max(6, Math.round(hb * 0.2));
+      const sx    = (w - slotW) / 2;
+      const sy    = Math.round(hb * 0.44);
+      ctx.fillStyle = '#0d111a';
+      ctx.fillRect(sx, sy, slotW, slotH);
+      ctx.strokeStyle = 'rgba(255,255,255,.22)';
+      ctx.lineWidth = kl;
+      ctx.strokeRect(sx, sy, slotW, slotH);
+
+      // Header text
+      ctx.font = 'bold ' + fs + 'px "IBM Plex Mono", monospace';
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#44b3fe';
+      ctx.fillText('ATTENDEE', b + fs * 0.7, base);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f5f7fb';
+      ctx.fillText('SCD · SS 2026', w - b - fs * 0.7, base);
+
+      // Accent line
+      ctx.strokeStyle = '#44b3fe';
+      ctx.lineWidth = kl;
+      ctx.beginPath();
+      ctx.moveTo(b, hb);
+      ctx.lineTo(w - b, hb);
+      ctx.stroke();
+      ctx.restore();
+
+    } else if (frame === 'gridbox') {
+      // Brand boxes on the 52px grid, edges only
+      ctx.save();
+      const s    = Math.round(Math.min(w, h) / 9.2);
+      const half = Math.round(s / 2);
+      const rail = Math.max(6, Math.min(14, Math.round(Math.min(w, h) * 0.017)));
+
+      // Module grid
+      ctx.globalAlpha = 0.09;
+      ctx.strokeStyle = '#8b96b3';
+      ctx.lineWidth = Math.max(1, Math.round(rail / 8));
+      ctx.beginPath();
+      for (let x = s; x < w; x += s) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = s; y < h; y += s) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Ink rail
+      ctx.strokeStyle = '#161c24';
+      ctx.lineWidth = rail;
+      ctx.strokeRect(rail / 2, rail / 2, w - rail, h - rail);
+
+      // Boxes
+      const boxes = [
+        [0, 0, s, '#fe57ea'],
+        [s, 0, half, '#44b3fe'],
+        [0, s, half, '#fc9907'],
+        [w - s, 0, s, '#44b3fe'],
+        [w - s - half, 0, half, '#07e383'],
+        [0, h - s, s, '#a759ff'],
+        [s, h - half, half, '#fc9907'],
+        [w - s, h - s, s, '#07e383'],
+        [w - s - half, h - half, half, '#fe57ea'],
+        [0, Math.round(h * 0.45), half, '#07e383'],
+        [w - half, Math.round(h * 0.38), half, '#a759ff']
+      ];
+      ctx.shadowColor = 'rgba(0,0,0,.45)';
+      ctx.shadowBlur = Math.round(s * 0.23);
+      for (let i = 0; i < boxes.length; i++) {
+        ctx.fillStyle = boxes[i][3];
+        ctx.fillRect(boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][2]);
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+    } else if (frame === 'aurora') {
+      // Hero gradient aperture
+      ctx.save();
+      const kl = Math.max(3, Math.round(Math.min(w, h) * 0.006));
+      const b  = Math.max(12, Math.min(22 - kl, Math.round(Math.min(w, h) * 0.038)));
+      const hero = () => {
+        const g = ctx.createLinearGradient(0, 0, w * 0.94, h * 0.34);
+        g.addColorStop(0,    '#fe55eb');
+        g.addColorStop(0.25, '#ad5cfd');
+        g.addColorStop(0.5,  '#42b2fe');
+        g.addColorStop(0.75, '#00e681');
+        g.addColorStop(1,    '#fe55eb');
+        return g;
+      };
+
+      // Outer glow
+      ctx.shadowColor = 'rgba(66,178,254,.75)';
+      ctx.shadowBlur = Math.round(b * 1.8);
+      ctx.strokeStyle = hero();
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+      ctx.shadowBlur = 0;
+
+      // Gradient rail
+      ctx.strokeStyle = hero();
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+
+      // Ink keyline so the edge still reads on a bright background
+      ctx.strokeStyle = 'rgba(11,21,38,.85)';
+      ctx.lineWidth = kl;
+      ctx.strokeRect(b + kl / 2, b + kl / 2, w - (b + kl), h - (b + kl));
+
+      // Vignette
+      const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34,
+                                          w / 2, h / 2, Math.max(w, h) * 0.62);
+      vg.addColorStop(0, 'rgba(11,21,38,0)');
+      vg.addColorStop(1, 'rgba(11,21,38,.38)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(b, b, w - b * 2, h - b * 2);
+
+      // Corner accents
+      const a = Math.round(Math.min(w, h) * 0.045);
+      const o = b + kl + 6;
+      const tick = (tx, ty, dx, dy) => {
+        ctx.beginPath();
+        ctx.moveTo(tx, ty + dy * a);
+        ctx.lineTo(tx, ty);
+        ctx.lineTo(tx + dx * a, ty);
+        ctx.stroke();
+      };
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#f5f7fb';
+      ctx.lineWidth = kl;
+      tick(o, o, 1, 1);
+      tick(w - o, o, -1, 1);
+      tick(o, h - o, 1, -1);
+      tick(w - o, h - o, -1, -1);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+    } else if (frame === 'terminal') {
+      // Console HUD: status rail with a prompt
+      ctx.save();
+      const kl   = Math.max(3, Math.round(Math.min(w, h) * 0.006));
+      const b    = Math.max(8, Math.min(22 - kl, Math.round(Math.min(w, h) * 0.022)));
+      const hb   = Math.round(h * 0.095);
+      const fs   = Math.max(10, Math.round(hb * 0.34));
+      const base = Math.round(hb / 2 + fs * 0.35);
+      const ink  = '#0d111a';
+
+      // Scrim
+      const sc = ctx.createLinearGradient(0, h - h * 0.2, 0, h);
+      sc.addColorStop(0, 'rgba(13,17,26,0)');
+      sc.addColorStop(1, 'rgba(13,17,26,.45)');
+      ctx.fillStyle = sc;
+      ctx.fillRect(0, h - h * 0.2, w, h * 0.2);
+
+      // Frame
+      ctx.shadowColor = 'rgba(0,0,0,.55)';
+      ctx.shadowBlur = Math.round(b * 1.6);
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+      ctx.shadowBlur = 0;
+
+      // Status rail
+      ctx.fillStyle = ink;
+      ctx.fillRect(0, 0, w, hb);
+      ctx.strokeStyle = '#07e383';
+      ctx.lineWidth = kl;
+      ctx.beginPath();
+      ctx.moveTo(0, hb);
+      ctx.lineTo(w, hb);
+      ctx.stroke();
+
+      // Prompt + cursor
+      ctx.font = 'bold ' + fs + 'px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      const prompt = '> build.power.lead';
+      ctx.fillStyle = '#07e383';
+      ctx.fillText(prompt, b + fs * 0.7, base);
+      ctx.fillRect(b + fs * 1.0 + ctx.measureText(prompt).width,
+                   base - fs * 0.78, fs * 0.6, fs);
+
+      // Event id + dot
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f5f7fb';
+      ctx.fillText('SCD · SS 2026', w - b - fs * 1.9, base);
+      ctx.fillStyle = '#fe57ea';
+      ctx.beginPath();
+      ctx.arc(w - b - fs * 0.85, base - fs * 0.32, fs * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+    } else if (frame === 'chipdie') {
+      // Chip die: notched bezel built from the event chip mark
+      ctx.save();
+      const kl   = Math.max(3, Math.round(Math.min(w, h) * 0.006));
+      const b    = Math.max(12, Math.min(20 - kl, Math.round(Math.min(w, h) * 0.040)));
+      const t    = Math.max(5, Math.round(b * 0.5));
+      const blue = '#44b3fe';
+
+      // Die body
+      ctx.shadowColor = 'rgba(0,0,0,.5)';
+      ctx.shadowBlur = Math.round(b * 1.3);
+      ctx.strokeStyle = '#161c24';
+      ctx.lineWidth = b;
+      ctx.strokeRect(b / 2, b / 2, w - b, h - b);
+      ctx.shadowBlur = 0;
+
+      // Teeth
+      const stepT = t * 3;
+      ctx.fillStyle = blue;
+      for (let x = stepT; x < w - stepT; x += stepT) {
+        ctx.fillRect(x, b - t, t, t);
+        ctx.fillRect(x, h - b, t, t);
+      }
+      for (let y = stepT; y < h - stepT; y += stepT) {
+        ctx.fillRect(b - t, y, t, t);
+        ctx.fillRect(w - b, y, t, t);
+      }
+
+      // Corner pads
+      const p = Math.round(t * 1.4);
+      ctx.fillRect(b - t, b - t, p, p);
+      ctx.fillRect(w - b + t - p, b - t, p, p);
+      ctx.fillRect(b - t, h - b + t - p, p, p);
+      ctx.fillRect(w - b + t - p, h - b + t - p, p, p);
+
+      // Keyline
+      ctx.strokeStyle = blue;
+      ctx.lineWidth = kl;
+      ctx.strokeRect(b + kl / 2, b + kl / 2, w - (b + kl), h - (b + kl));
+
+      // Inner glow
+      ctx.globalAlpha = 0.5;
+      ctx.shadowColor = 'rgba(68,179,254,.9)';
+      ctx.shadowBlur = Math.round(b * 0.8);
+      ctx.strokeStyle = 'rgba(68,179,254,.45)';
+      ctx.lineWidth = kl;
+      ctx.strokeRect(b + kl * 1.5, b + kl * 1.5, w - (b + kl * 1.5) * 2, h - (b + kl * 1.5) * 2);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.restore();
     }
   }
 
