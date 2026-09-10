@@ -296,6 +296,28 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   box-shadow: inset 0 0 0 3px #161c24, inset 0 0 0 4px #44b3fe;
 }
 
+/* Filter swatches — one sample, each chip showing its own filter */
+.flt-sample {
+  background: linear-gradient(135deg, #fc9907 0%, #fe57ea 35%, #a759ff 65%, #44b3fe 100%);
+}
+
+.filter-opt[data-filter="noir"]  .flt-sample { filter: grayscale(1) contrast(1.3) brightness(1.05); }
+.filter-opt[data-filter="sepia"] .flt-sample { filter: sepia(.75) contrast(1.05) brightness(1.05); }
+.filter-opt[data-filter="faded"] .flt-sample { filter: contrast(.82) saturate(.85) brightness(1.14); }
+.filter-opt[data-filter="warm"]  .flt-sample { filter: sepia(.3) saturate(1.35) hue-rotate(-12deg) brightness(1.04); }
+.filter-opt[data-filter="cool"]  .flt-sample { filter: saturate(1.2) hue-rotate(14deg) brightness(1.04); }
+.filter-opt[data-filter="vivid"] .flt-sample { filter: saturate(1.65) contrast(1.18); }
+.filter-opt[data-filter="glow"]  .flt-sample { filter: blur(.6px) brightness(1.12) saturate(1.15) contrast(.95); }
+
+/* Locked out while a strip is being taken */
+.frame-opt:disabled,
+.sticker-btn:disabled,
+.cc-btn:disabled,
+.mode-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
 /* Sticker grid */
 .sticker-grid {
   display: grid;
@@ -483,7 +505,34 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   display: block;
 }
 
-.pb-canvas { z-index: 2; }
+/* Mirror the preview so it matches the saved photo. Video only — the stickers,
+   caption and frame aren't mirrored on the canvas either. */
+.pb-viewfinder[data-facing="user"] .pb-video { transform: scaleX(-1); }
+
+/* A strip is far taller than the 4:3 viewfinder, and cover would show a slice */
+.pb-canvas {
+  z-index: 2;
+  object-fit: contain;
+  background: #0d111a;
+}
+
+/* With a photo on screen the live overlays would draw a second copy on top */
+.pb-viewfinder[data-mode="result"] .sticker-layer,
+.pb-viewfinder[data-mode="result"] .caption-overlay,
+.pb-viewfinder[data-mode="result"] .frame-overlay,
+.pb-viewfinder[data-mode="result"] .vf-corner {
+  display: none;
+}
+
+/* Filters. These strings are duplicated in FILTERS in photobooth.js, which is
+   what gets baked into the saved photo — keep the two in step. */
+.pb-viewfinder[data-filter="noir"]  .pb-video { filter: grayscale(1) contrast(1.3) brightness(1.05); }
+.pb-viewfinder[data-filter="sepia"] .pb-video { filter: sepia(.75) contrast(1.05) brightness(1.05); }
+.pb-viewfinder[data-filter="faded"] .pb-video { filter: contrast(.82) saturate(.85) brightness(1.14); }
+.pb-viewfinder[data-filter="warm"]  .pb-video { filter: sepia(.3) saturate(1.35) hue-rotate(-12deg) brightness(1.04); }
+.pb-viewfinder[data-filter="cool"]  .pb-video { filter: saturate(1.2) hue-rotate(14deg) brightness(1.04); }
+.pb-viewfinder[data-filter="vivid"] .pb-video { filter: saturate(1.65) contrast(1.18); }
+.pb-viewfinder[data-filter="glow"]  .pb-video { filter: blur(.6px) brightness(1.12) saturate(1.15) contrast(.95); }
 
 /* Viewfinder corner brackets */
 .vf-corner {
@@ -513,40 +562,33 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .frame-overlay[data-frame="green"]  { box-shadow: inset 0 0 0 16px #07e383; }
 .frame-overlay[data-frame="purple"] { box-shadow: inset 0 0 0 16px #a759ff; }
 
+/* 16px gradient ring, matching the canvas stroke */
 .frame-overlay[data-frame="summit"]::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 4px;
-  padding: 4px;
+  padding: 16px;
   background: linear-gradient(135deg, #44b3fe, #a759ff, #fc9907);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
 }
-.frame-overlay[data-frame="summit"] {
-  /* Thick gradient border via outline trick */
-  box-shadow:
-    inset 0 0 0 2px #44b3fe,
-    inset 0 0 0 4px #a759ff,
-    inset 0 0 0 16px #fc990740,
-    inset 0 0 0 14px #44b3fe40;
-}
 
+/* Footer sits below the caption. At 36px it covered it. */
 .frame-overlay[data-frame="summit"]::after {
-  content: 'AWS SCD \B7 SOUTH SUMMIT 2026';
+  content: 'AWS SCD · SOUTH SUMMIT 2026';
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 36px;
-  background: linear-gradient(90deg, #161c24 0%, #1a2138 100%);
+  height: 20px;
+  background: #161c24;
   color: #44b3fe;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: .12em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -560,36 +602,39 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Blueprint */
 .frame-overlay[data-frame="blueprint"] {
+  --kl: max(3px, calc(2.88px * var(--vf-k, 1)));
+  --b: clamp(10px, calc(15.36px * var(--vf-k, 1)), calc(22px - var(--kl)));
+  --cell: calc(40px * var(--vf-k, 1));
+  --fs: max(9px, calc(12.96px * var(--vf-k, 1)));
   background:
-    repeating-linear-gradient(0deg, transparent 0 39px, rgba(66,178,254,.10) 39px 40px),
-    repeating-linear-gradient(90deg, transparent 0 39px, rgba(66,178,254,.10) 39px 40px);
+    repeating-linear-gradient(0deg, transparent 0 calc(var(--cell) - 1px), rgba(66,178,254,.10) calc(var(--cell) - 1px) var(--cell)),
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--cell) - 1px), rgba(66,178,254,.10) calc(var(--cell) - 1px) var(--cell));
   box-shadow:
-    inset 0 0 0 15px #0e1420,
-    inset 0 0 0 18px #42b2fe,
-    inset 0 0 26px 18px rgba(0,0,0,.45);
+    inset 0 0 0 var(--b) #0e1420,
+    inset 0 0 0 calc(var(--b) + var(--kl)) #42b2fe,
+    inset 0 0 26px calc(var(--b) + var(--kl)) rgba(0,0,0,.45);
 }
 .frame-overlay[data-frame="blueprint"]::before,
 .frame-overlay[data-frame="blueprint"]::after {
   position: absolute;
-  top: 22px;
-  height: 25px;
+  top: calc(var(--b) + var(--kl) + 2px);
+  height: calc(var(--fs) * 1.7);
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 calc(var(--fs) * .7);
   background: rgba(14,20,32,.92);
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
+  font-size: var(--fs);
   font-weight: 700;
-  letter-spacing: .1em;
 }
 .frame-overlay[data-frame="blueprint"]::before {
-  content: 'SCD \00B7 SS 2026';
-  left: 22px;
+  content: 'SCD · SS 2026';
+  left: calc(var(--b) + var(--kl) + 2px);
   color: #42b2fe;
 }
 .frame-overlay[data-frame="blueprint"]::after {
   content: 'SHEET 01';
-  right: 22px;
+  right: calc(var(--b) + var(--kl) + 2px);
   color: #fc9907;
 }
 
@@ -603,6 +648,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     inset 0 0 22px 11px rgba(0,0,0,.4);
 }
 .frame-overlay[data-frame="badge"]::before {
+  --fs: max(10px, calc(15.5px * var(--vf-k, 1)));
   content: 'ATTENDEE';
   position: absolute;
   top: 0;
@@ -617,7 +663,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   align-items: center;
   padding: 6px 16px 0;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
+  font-size: var(--fs);
   font-weight: 700;
   letter-spacing: .12em;
   color: #44b3fe;
@@ -637,10 +683,13 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Primer Grid */
 .frame-overlay[data-frame="gridbox"] {
+  --s: calc(52.17px * var(--vf-k, 1));
+  --half: calc(var(--s) / 2);
+  --rail: clamp(6px, calc(8.16px * var(--vf-k, 1)), 14px);
   background:
-    repeating-linear-gradient(0deg, transparent 0 51px, rgba(139,150,179,.09) 51px 52px),
-    repeating-linear-gradient(90deg, transparent 0 51px, rgba(139,150,179,.09) 51px 52px);
-  box-shadow: inset 0 0 0 8px #161c24;
+    repeating-linear-gradient(0deg, transparent 0 calc(var(--s) - 1px), rgba(139,150,179,.09) calc(var(--s) - 1px) var(--s)),
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--s) - 1px), rgba(139,150,179,.09) calc(var(--s) - 1px) var(--s));
+  box-shadow: inset 0 0 0 var(--rail) #161c24;
 }
 .frame-overlay[data-frame="gridbox"]::before {
   content: '';
@@ -654,23 +703,27 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     linear-gradient(#fe57ea, #fe57ea);
   background-repeat: no-repeat;
   background-size:
-    52px 52px, 26px 26px, 26px 26px, 52px 52px, 26px 26px,
-    52px 52px, 26px 26px, 52px 52px, 26px 26px;
+    var(--s) var(--s), var(--half) var(--half), var(--half) var(--half),
+    var(--s) var(--s), var(--half) var(--half),
+    var(--s) var(--s), var(--half) var(--half),
+    var(--s) var(--s), var(--half) var(--half);
   background-position:
-    0 0, 52px 0, 0 52px, 100% 0, calc(100% - 52px) 0,
-    0 100%, 52px calc(100% - 26px), 100% 100%, calc(100% - 52px) calc(100% - 26px);
+    0 0, var(--s) 0, 0 var(--s), 100% 0, calc(100% - var(--s)) 0,
+    0 100%, var(--s) calc(100% - var(--half)), 100% 100%, calc(100% - var(--s)) calc(100% - var(--half));
   filter: drop-shadow(0 2px 8px rgba(0,0,0,.45));
 }
 
 /* Summit Aurora */
 .frame-overlay[data-frame="aurora"] {
+  --kl: max(3px, calc(2.88px * var(--vf-k, 1)));
+  --b: clamp(12px, calc(18.24px * var(--vf-k, 1)), calc(22px - var(--kl)));
   box-shadow: inset 0 0 60px 24px rgba(11,21,38,.38);
 }
 .frame-overlay[data-frame="aurora"]::before {
   content: '';
   position: absolute;
   inset: 0;
-  padding: 18px;
+  padding: var(--b);
   border-radius: 4px;
   background: linear-gradient(110deg, #fe55eb 0%, #ad5cfd 25%, #42b2fe 50%, #00e681 75%, #fe55eb 100%);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -681,8 +734,8 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .frame-overlay[data-frame="aurora"]::after {
   content: '';
   position: absolute;
-  inset: 18px;
-  box-shadow: inset 0 0 0 3px rgba(11,21,38,.85);
+  inset: var(--b);
+  box-shadow: inset 0 0 0 var(--kl) rgba(11,21,38,.85);
   background: radial-gradient(ellipse at center, transparent 45%, rgba(11,21,38,.38) 100%);
 }
 
@@ -694,6 +747,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     inset 0 0 22px 11px rgba(0,0,0,.45);
 }
 .frame-overlay[data-frame="terminal"]::before {
+  --fs: max(10px, calc(15.5px * var(--vf-k, 1)));
   content: '> build.power.lead';
   position: absolute;
   top: 0;
@@ -706,7 +760,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   align-items: center;
   padding: 0 14px;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
+  font-size: var(--fs);
   font-weight: 700;
   letter-spacing: .08em;
   color: #07e383;
@@ -725,25 +779,28 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Silicon Die */
 .frame-overlay[data-frame="chipdie"] {
+  --kl: max(3px, calc(2.88px * var(--vf-k, 1)));
+  --b: clamp(12px, calc(19.2px * var(--vf-k, 1)), calc(20px - var(--kl)));
+  --t: max(5px, calc(var(--b) / 2));
   box-shadow:
-    inset 0 0 0 17px #161c24,
-    inset 0 0 0 20px #44b3fe,
-    inset 0 0 24px 20px rgba(0,0,0,.45);
+    inset 0 0 0 var(--b) #161c24,
+    inset 0 0 0 calc(var(--b) + var(--kl)) #44b3fe,
+    inset 0 0 24px calc(var(--b) + var(--kl)) rgba(0,0,0,.45);
 }
 .frame-overlay[data-frame="chipdie"]::before {
   content: '';
   position: absolute;
-  inset: 8px;
+  inset: calc(var(--b) - var(--t));
   background:
-    repeating-linear-gradient(90deg, #44b3fe 0 9px, transparent 9px 27px) top/100% 9px no-repeat,
-    repeating-linear-gradient(90deg, #44b3fe 0 9px, transparent 9px 27px) bottom/100% 9px no-repeat,
-    repeating-linear-gradient(180deg, #44b3fe 0 9px, transparent 9px 27px) left/9px 100% no-repeat,
-    repeating-linear-gradient(180deg, #44b3fe 0 9px, transparent 9px 27px) right/9px 100% no-repeat;
+    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) top/100% var(--t) no-repeat,
+    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) bottom/100% var(--t) no-repeat,
+    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) left/var(--t) 100% no-repeat,
+    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) right/var(--t) 100% no-repeat;
 }
 .frame-overlay[data-frame="chipdie"]::after {
   content: '';
   position: absolute;
-  inset: 20px;
+  inset: calc(var(--b) + var(--kl));
   box-shadow: inset 0 0 14px 2px rgba(68,179,254,.45);
 }
 
@@ -780,6 +837,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   pointer-events: none;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 16px;
+  line-height: 1.3;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0,0,0,.8), 0 0 20px rgba(0,0,0,.6);
@@ -835,7 +893,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .cam-error {
   position: absolute;
   inset: 0;
-  z-index: 15;
+  z-index: 19;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -953,8 +1011,7 @@ html[data-theme="light"] .mode-btn.active {
 .gallery-item img {
   width: 100%;
   display: block;
-  aspect-ratio: 4/3;
-  object-fit: cover;
+  height: auto;
 }
 
 .gallery-item-actions {
@@ -1095,6 +1152,9 @@ html[data-theme="dark"] .theme-toggle-thumb { transform: translateX(26px); backg
     grid-template-columns: 1fr;
     padding: 0 16px;
   }
+  /* The 78px gutters leave the brand title no room to sit on one line */
+  .pb-header-inner,
+  .pb-footer-inner { padding: 0 16px; }
   .pb-gallery { max-height: 300px; }
   .pb-panel { order: 2; }
   .pb-center { order: 1; }

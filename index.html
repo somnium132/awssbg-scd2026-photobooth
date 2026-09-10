@@ -151,9 +151,48 @@
           </div>
         </div>
 
+        <!-- Filters -->
+        <div class="pb-section" id="filterSection">
+          <p class="pb-section-label"><span class="label-num">02</span> FILTER</p>
+          <div class="frame-picker" id="filterPicker">
+            <button class="frame-opt filter-opt active" data-filter="none" id="filterOptNone">
+              <span class="frame-preview flt-sample"></span>
+              <span>None</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="noir" id="filterOptNoir">
+              <span class="frame-preview flt-sample"></span>
+              <span>Noir</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="sepia" id="filterOptSepia">
+              <span class="frame-preview flt-sample"></span>
+              <span>Sepia</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="faded" id="filterOptFaded">
+              <span class="frame-preview flt-sample"></span>
+              <span>Faded</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="warm" id="filterOptWarm">
+              <span class="frame-preview flt-sample"></span>
+              <span>Warm</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="cool" id="filterOptCool">
+              <span class="frame-preview flt-sample"></span>
+              <span>Cool</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="vivid" id="filterOptVivid">
+              <span class="frame-preview flt-sample"></span>
+              <span>Vivid</span>
+            </button>
+            <button class="frame-opt filter-opt" data-filter="glow" id="filterOptGlow">
+              <span class="frame-preview flt-sample"></span>
+              <span>Glow</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Stickers -->
         <div class="pb-section">
-          <p class="pb-section-label"><span class="label-num">02</span> STICKERS</p>
+          <p class="pb-section-label"><span class="label-num">03</span> STICKERS</p>
           <p class="pb-section-hint">Click to add &middot; drag to move &middot; double-click to remove</p>
           <div class="sticker-grid" id="stickerGrid">
             <button class="sticker-btn" data-sticker="rocket" title="Rocket">🚀</button>
@@ -178,7 +217,7 @@
 
         <!-- Caption -->
         <div class="pb-section">
-          <p class="pb-section-label"><span class="label-num">03</span> CAPTION</p>
+          <p class="pb-section-label"><span class="label-num">04</span> CAPTION</p>
           <input type="text" id="captionInput" class="caption-input" placeholder="e.g. Cloud × AI: Build. Power. Lead." maxlength="60">
           <div class="caption-color-row">
             <span class="cc-label">Color:</span>
@@ -238,6 +277,8 @@
           <span id="captureLabel">Snap Photo</span>
         </button>
 
+        <button class="btn btn-ghost btn-sm" id="btnCancel" style="width:100%;margin-top:8px;" hidden>Cancel</button>
+
         <button class="btn btn-download" id="btnDownload" hidden>
           <svg width="20" height="20"><use href="#icon-download"></use></svg>
           Download Photo
@@ -248,7 +289,7 @@
       <!-- RIGHT: Gallery -->
       <aside class="pb-gallery">
         <div class="gallery-header">
-          <p class="pb-section-label"><span class="label-num">04</span> GALLERY</p>
+          <p class="pb-section-label"><span class="label-num">05</span> GALLERY</p>
           <button class="btn btn-ghost btn-sm" id="btnClearGallery">
             <svg width="13" height="13"><use href="#icon-trash"></use></svg> Clear
           </button>

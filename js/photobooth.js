@@ -7,19 +7,48 @@
 
   const STICKER_MAP = {"rocket": "🚀", "cloud": "☁️", "lightning": "⚡", "fire": "🔥", "bulb": "💡", "robot": "🤖", "target": "🎯", "laptop": "💻", "star": "🌟", "trophy": "🏆", "party": "🎉", "brain": "🧠", "satellite": "📡", "crystal": "🔮", "gear": "⚙️", "globe": "🌐"};
 
+  // CSS filter strings, shared by the live preview and the exported photo
+  const FILTERS = {
+    none:  '',
+    noir:  'grayscale(1) contrast(1.3) brightness(1.05)',
+    sepia: 'sepia(.75) contrast(1.05) brightness(1.05)',
+    faded: 'contrast(.82) saturate(.85) brightness(1.14)',
+    warm:  'sepia(.3) saturate(1.35) hue-rotate(-12deg) brightness(1.04)',
+    cool:  'saturate(1.2) hue-rotate(14deg) brightness(1.04)',
+    vivid: 'saturate(1.65) contrast(1.18)',
+    glow:  'blur(.6px) brightness(1.12) saturate(1.15) contrast(.95)'
+  };
+
+  // Frame metrics are written against a 480px-tall viewfinder and scaled from there,
+  // so the CSS preview and the canvas agree at any window size.
+  const REF_H = 480;
+  const MAX_GALLERY = 24;
+
+  // These mirror .sticker-item and .caption-overlay in the stylesheet. If you
+  // change one, change the other or the photo stops matching the preview.
+  const STICKER_FONT   = '"IBM Plex Mono", "Segoe UI Emoji", "Apple Color Emoji", monospace';
+  const CAPTION_SIZE   = 16;
+  const CAPTION_LEAD   = 21;
+  const CAPTION_BOTTOM = 22;
+
   // ── State ─────────────────────────────────────────────────
   let stream = null;
-  let facingMode = 'user';
+  let facingMode = 'user';   // what we ask for
+  let mirrored = true;       // what the camera actually gave us
   let mode = 'strip';
   let selectedFrame = 'none';
+  let selectedFilter = 'none';
   let captionColor = '#ffffff';
   let stickers = [];
   let gallery = [];
   let isCapturing = false;
+  let cancelRequested = false;
   let stripShots = [];
   let draggingSticker = null;
+  let dragPointerId = null;
   let dragOffset = { x: 0, y: 0 };
   let stickerIdCounter = 0;
+  let resultToken = 0;       // guards against a slow decode overwriting a newer one
 
   // ── Elements ──────────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -36,6 +65,8 @@
   const countdownNum     = $('countdownNum');
   const flashOverlay     = $('flashOverlay');
   const framePicker      = $('framePicker');
+  const filterPicker     = $('filterPicker');
+  const filterSection    = $('filterSection');
   const stickerGrid      = $('stickerGrid');
   const captionInput     = $('captionInput');
   const galleryList      = $('galleryList');
@@ -49,7 +80,27 @@
   const btnSingle        = $('btnSingle');
   const btnStrip         = $('btnStrip');
   const captureLabel     = $('captureLabel');
+  const btnCancel        = $('btnCancel');
   const themeToggle      = $('themeToggle');
+
+  // ── Viewfinder scale ──────────────────────────────────────
+  // Publishes the viewfinder height to CSS so frame previews scale the same way
+  // the canvas does. Without it the two only line up at one window size.
+  function syncViewfinderScale() {
+    viewfinder.style.setProperty('--vf-k', viewfinder.offsetHeight / REF_H);
+  }
+  syncViewfinderScale();
+  if (window.ResizeObserver) {
+    new ResizeObserver(syncViewfinderScale).observe(viewfinder);
+  } else {
+    window.addEventListener('resize', syncViewfinderScale);
+  }
+
+  // Live overlays must not sit on top of a finished photo
+  function setViewfinderMode(m) {
+    viewfinder.setAttribute('data-mode', m);
+  }
+  setViewfinderMode('live');
 
   // ── Theme ─────────────────────────────────────────────────
   themeToggle.addEventListener('click', () => {
@@ -66,11 +117,51 @@
   function showCameraError(msg) {
     camError.hidden = false;
     video.hidden = true;
+    btnCapture.disabled = true;
     if (camErrorMsg) camErrorMsg.textContent = msg || 'Camera access denied or unavailable.';
   }
 
-  async function startCamera() {
+  function clearCameraError() {
     camError.hidden = true;
+    btnCapture.disabled = false;
+  }
+
+  function cameraErrorMessage(err) {
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      return 'Camera permission denied. Click the camera icon in your browser address bar to allow access.';
+    }
+    if (err.name === 'NotFoundError') return 'No camera found on this device.';
+    if (err.name === 'NotReadableError') return 'Another app is using the camera. Close it and try again.';
+    if (window.location.protocol === 'file:') {
+      return 'Camera requires HTTP. Open via VS Code Live Server or python -m http.server.';
+    }
+    return 'Camera access denied or unavailable.';
+  }
+
+  // facingMode is only a request. Ask the track what we actually got, because that
+  // is what decides whether the photo should be mirrored.
+  function readFacing() {
+    const track = stream && stream.getVideoTracks()[0];
+    const actual = track && track.getSettings && track.getSettings().facingMode;
+    mirrored = actual ? actual === 'user' : facingMode === 'user';
+    viewfinder.setAttribute('data-facing', mirrored ? 'user' : 'environment');
+  }
+
+  // Only worth offering Flip if there is something to flip to
+  async function syncFlipButton() {
+    if (!navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      btnFlip.hidden = cams.length < 2;
+    } catch (e) {
+      // leave the button as-is if we cannot tell
+    }
+  }
+
+  async function startCamera() {
+    if (isCapturing) return;
+    clearCameraError();
 
     // Check if getUserMedia is available at all
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -83,8 +174,7 @@
     }
 
     try {
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      stream = null;
+      stopStream();
 
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
@@ -92,11 +182,29 @@
       });
 
       video.srcObject = stream;
-      await video.play().catch(() => {});
+      try {
+        await video.play();
+      } catch (e) {
+        // Autoplay blocked. The UI would otherwise look live but never capture.
+        showCameraError('Tap the viewfinder to start the camera.');
+        viewfinder.addEventListener('click', resumePlayback, { once: true });
+        return;
+      }
+
+      // Tell us if the device is unplugged or grabbed by another app
+      stream.getVideoTracks().forEach(t => {
+        t.addEventListener('ended', () => {
+          showCameraError('The camera was disconnected. Click "Try Again" to reconnect.');
+        });
+      });
+
+      readFacing();
+      syncFlipButton();
 
       video.hidden = false;
       canvas.hidden = true;
-      camError.hidden = true;
+      setViewfinderMode('live');
+      clearCameraError();
       btnRetake.hidden = true;
       btnDownload.hidden = true;
       btnCapture.hidden = false;
@@ -104,16 +212,25 @@
       stripShots = [];
     } catch (err) {
       console.error('Camera error:', err);
-      let msg = 'Camera access denied or unavailable.';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Camera permission denied. Click the camera icon in your browser address bar to allow access.';
-      } else if (err.name === 'NotFoundError') {
-        msg = 'No camera found on this device.';
-      } else if (window.location.protocol === 'file:') {
-        msg = 'Camera requires HTTP. Open via VS Code Live Server or python -m http.server.';
-      }
-      showCameraError(msg);
+      showCameraError(cameraErrorMessage(err));
     }
+  }
+
+  async function resumePlayback() {
+    try {
+      await video.play();
+      video.hidden = false;
+      clearCameraError();
+      readFacing();
+    } catch (e) {
+      showCameraError('Could not start the camera preview.');
+      viewfinder.addEventListener('click', resumePlayback, { once: true });
+    }
+  }
+
+  function stopStream() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
   }
 
   function hasLiveStream() {
@@ -121,6 +238,7 @@
   }
 
   btnFlip.addEventListener('click', () => {
+    if (isCapturing) return;
     facingMode = facingMode === 'user' ? 'environment' : 'user';
     startCamera();
   });
@@ -130,6 +248,7 @@
   btnRetake.addEventListener('click', () => {
     canvas.hidden = true;
     video.hidden = false;
+    setViewfinderMode('live');
     btnRetake.hidden = true;
     btnDownload.hidden = true;
     btnCapture.hidden = false;
@@ -143,6 +262,7 @@
   btnStrip.addEventListener('click',  () => setMode('strip'));
 
   function setMode(m) {
+    if (isCapturing) return;
     mode = m;
     btnSingle.classList.toggle('active', m === 'single');
     btnStrip.classList.toggle('active',  m === 'strip');
@@ -150,21 +270,49 @@
     updateCaptureLabel();
   }
 
+  // Changing the frame or mode part-way through a strip gives panels that don't
+  // match each other, so everything stays locked until the strip is finished.
+  function setControlsLocked(locked) {
+    document.querySelectorAll(
+      '.mode-btn, .frame-opt, .filter-opt, .sticker-btn, .cc-btn, #btnFlip, #btnClearStickers'
+    ).forEach(el => { el.disabled = locked; });
+    captionInput.disabled = locked;
+    if (btnCancel) btnCancel.hidden = !locked;
+  }
+
   function updateCaptureLabel() {
     captureLabel.textContent = mode === 'strip' ? 'Snap Strip \u00d73' : 'Snap Photo';
   }
 
-  setMode('strip');
+  // Matches the markup's initial state, so nothing flickers on load
+  setMode('single');
 
   // ── Frame picker ──────────────────────────────────────────
   framePicker.addEventListener('click', e => {
     const opt = e.target.closest('.frame-opt');
-    if (!opt) return;
+    if (!opt || isCapturing) return;
     framePicker.querySelectorAll('.frame-opt').forEach(b => b.classList.remove('active'));
     opt.classList.add('active');
     selectedFrame = opt.dataset.frame;
     frameOverlay.setAttribute('data-frame', selectedFrame);
   });
+
+  // ── Filter picker ─────────────────────────────────────────
+  // ctx.filter is missing on older Safari. Rather than show a filter in the
+  // preview that the saved photo can't reproduce, hide the section entirely.
+  const canFilter = 'filter' in ctx;
+  if (!canFilter && filterSection) filterSection.hidden = true;
+
+  if (filterPicker) {
+    filterPicker.addEventListener('click', e => {
+      const opt = e.target.closest('.filter-opt');
+      if (!opt || isCapturing) return;
+      filterPicker.querySelectorAll('.filter-opt').forEach(b => b.classList.remove('active'));
+      opt.classList.add('active');
+      selectedFilter = opt.dataset.filter;
+      viewfinder.setAttribute('data-filter', selectedFilter);
+    });
+  }
 
   // ── Stickers ──────────────────────────────────────────────
   stickerGrid.addEventListener('click', e => {
@@ -173,12 +321,18 @@
     addSticker(btn.dataset.sticker);
   });
 
+  // Sticker coordinates resolve against the sticker layer, not the viewfinder.
+  // Measuring the viewfinder instead adds its 1px border to every drag.
+  function layerRect() {
+    return stickerLayer.getBoundingClientRect();
+  }
+
   function addSticker(key) {
     const emoji = STICKER_MAP[key] || key;
     const id = ++stickerIdCounter;
-    const vf = viewfinder.getBoundingClientRect();
-    const x = 30 + Math.random() * Math.max(10, vf.width - 100);
-    const y = 30 + Math.random() * Math.max(10, vf.height - 100);
+    const box = layerRect();
+    const x = 30 + Math.random() * Math.max(10, box.width - 100);
+    const y = 30 + Math.random() * Math.max(10, box.height - 100);
     const s = { id, emoji, x, y, size: 44 };
     stickers.push(s);
     renderSticker(s);
@@ -201,9 +355,11 @@
   }
 
   function onStickerDragStart(e) {
+    if (draggingSticker) return;
     e.preventDefault();
     e.stopPropagation();
     draggingSticker = e.currentTarget;
+    dragPointerId = e.pointerId;
     const rect = draggingSticker.getBoundingClientRect();
     dragOffset.x = e.clientX - rect.left;
     dragOffset.y = e.clientY - rect.top;
@@ -211,28 +367,46 @@
     draggingSticker.classList.add('selected');
     document.addEventListener('pointermove', onStickerDragMove);
     document.addEventListener('pointerup', onStickerDragEnd);
+    // Without this a cancelled pointer (two-finger scroll, pull-to-refresh)
+    // leaves the sticker stuck to the cursor with no way to drop it.
+    document.addEventListener('pointercancel', onStickerDragEnd);
   }
 
   function onStickerDragMove(e) {
-    if (!draggingSticker) return;
-    const vfRect = viewfinder.getBoundingClientRect();
-    const x = e.clientX - vfRect.left - dragOffset.x;
-    const y = e.clientY - vfRect.top  - dragOffset.y;
+    if (!draggingSticker || e.pointerId !== dragPointerId) return;
+    const box = layerRect();
+    const st = stickers.find(s => s.id === parseInt(draggingSticker.dataset.id));
+    const size = st ? st.size : 44;
+    // Keep a bit of the sticker on screen so it can always be grabbed again
+    const x = clamp(e.clientX - box.left - dragOffset.x, -size * 0.4, box.width - size * 0.6);
+    const y = clamp(e.clientY - box.top - dragOffset.y, -size * 0.4, box.height - size * 0.6);
     draggingSticker.style.left = x + 'px';
     draggingSticker.style.top  = y + 'px';
-    const id = parseInt(draggingSticker.dataset.id);
-    const st = stickers.find(s => s.id === id);
     if (st) { st.x = x; st.y = y; }
   }
 
-  function onStickerDragEnd() {
-    if (draggingSticker) draggingSticker.classList.remove('selected');
+  function onStickerDragEnd(e) {
+    if (e && e.pointerId !== dragPointerId) return;
+    if (draggingSticker) {
+      draggingSticker.classList.remove('selected');
+      if (dragPointerId !== null && draggingSticker.hasPointerCapture &&
+          draggingSticker.hasPointerCapture(dragPointerId)) {
+        draggingSticker.releasePointerCapture(dragPointerId);
+      }
+    }
     draggingSticker = null;
+    dragPointerId = null;
     document.removeEventListener('pointermove', onStickerDragMove);
     document.removeEventListener('pointerup', onStickerDragEnd);
+    document.removeEventListener('pointercancel', onStickerDragEnd);
+  }
+
+  function clamp(v, lo, hi) {
+    return Math.min(hi, Math.max(lo, v));
   }
 
   btnClearStickers.addEventListener('click', () => {
+    onStickerDragEnd();
     stickers = [];
     stickerLayer.innerHTML = '';
   });
@@ -255,57 +429,79 @@
   // ── Capture ───────────────────────────────────────────────
   btnCapture.addEventListener('click', () => {
     if (isCapturing) return;
-    // Guard: don't capture without a live camera
     if (!hasLiveStream()) {
-      showCameraError('Please allow camera access first, then click "Try Again".');
+      // Keep whatever specific message startCamera already put on screen
+      if (camError.hidden) showCameraError('Camera is not ready. Click "Try Again".');
       return;
     }
     if (mode === 'single') captureWithCountdown();
     else captureStrip();
   });
 
-  function abortCapture() {
+  if (btnCancel) {
+    btnCancel.addEventListener('click', () => { cancelRequested = true; });
+  }
+
+  function beginCapture() {
+    isCapturing = true;
+    cancelRequested = false;
+    btnCapture.disabled = true;
+    setControlsLocked(true);
+  }
+
+  function endCapture() {
     isCapturing = false;
-    btnCapture.disabled = false;
-    countdownOverlay.hidden = true;  // always clear countdown
+    cancelRequested = false;
+    // Stays disabled if the camera died and the error panel is up
+    btnCapture.disabled = !camError.hidden;
+    countdownOverlay.hidden = true;
+    setControlsLocked(false);
     updateCaptureLabel();
   }
 
+  function reportCaptureError(err) {
+    if (err && err.message === 'Cancelled') return;
+    console.error('Capture error:', err);
+    if (!hasLiveStream() && camError.hidden) {
+      showCameraError('Lost the camera during capture. Click "Try Again".');
+    }
+  }
+
+  function releaseShots() {
+    stripShots.forEach(url => URL.revokeObjectURL(url));
+    stripShots = [];
+  }
+
   async function captureWithCountdown() {
-    isCapturing = true;
-    btnCapture.disabled = true;
+    beginCapture();
     try {
       await countdown(3);
       await takePhoto();
     } catch (err) {
-      console.error('Capture error:', err);
+      reportCaptureError(err);
     } finally {
-      abortCapture();
+      endCapture();
     }
   }
 
   async function captureStrip() {
-    isCapturing = true;
-    btnCapture.disabled = true;
+    beginCapture();
     captureLabel.textContent = 'Snapping\u2026';
-    stripShots = [];
+    releaseShots();
     try {
       for (let i = 0; i < 3; i++) {
         await countdown(3);
-        const dataUrl = await captureFrame();
-        stripShots.push(dataUrl);
+        stripShots.push(await captureFrame());
         if (i < 2) await sleep(500);
       }
-      const stripDataUrl = await composeStrip(stripShots);
-      showResult(stripDataUrl);
-      addToGallery(stripDataUrl);
+      const strip = await composeStrip(stripShots);
+      showResult(strip);
+      addToGallery(strip);
     } catch (err) {
-      console.error('Strip capture error:', err);
+      reportCaptureError(err);
     } finally {
-      isCapturing = false;
-      btnCapture.disabled = false;
-      countdownOverlay.hidden = true;
-      updateCaptureLabel();
+      releaseShots();
+      endCapture();
     }
   }
 
@@ -320,6 +516,14 @@
       restartAnim(countdownNum);
 
       const iv = setInterval(() => {
+        // Checked every tick — the camera can be unplugged or taken by another
+        // app part-way through, and the user can cancel
+        if (cancelRequested || !hasLiveStream()) {
+          clearInterval(iv);
+          countdownOverlay.hidden = true;
+          reject(new Error(cancelRequested ? 'Cancelled' : 'No stream'));
+          return;
+        }
         count--;
         if (count <= 0) {
           clearInterval(iv);
@@ -342,9 +546,38 @@
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async function takePhoto() {
-    const dataUrl = await captureFrame();
-    showResult(dataUrl);
-    addToGallery(dataUrl);
+    const url = await captureFrame();
+    showResult(url);
+    addToGallery(url);
+  }
+
+  // The preview shows the camera through object-fit: cover, so the photo has to
+  // centre-crop the same way or it ends up squashed and showing more than you saw.
+  function coverCrop(vw, vh, ratio) {
+    if (!vw || !vh) return null;
+    if (vw / vh > ratio) {
+      const sw = vh * ratio;
+      return { sx: (vw - sw) / 2, sy: 0, sw, sh: vh };
+    }
+    const sh = vw / ratio;
+    return { sx: 0, sy: (vh - sh) / 2, sw: vw, sh };
+  }
+
+  function wrapText(c, text, maxWidth) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = '';
+    words.forEach(word => {
+      const next = line ? line + ' ' + word : word;
+      if (line && c.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+    if (line) lines.push(line);
+    return lines;
   }
 
   function captureFrame() {
@@ -357,46 +590,64 @@
 
       const w = viewfinder.offsetWidth;
       const h = viewfinder.offsetHeight;
-      const scale = 2;
+      const crop = coverCrop(video.videoWidth, video.videoHeight, w / h);
 
-      canvas.width  = w * scale;
-      canvas.height = h * scale;
+      // Work at the camera's own resolution rather than whatever width the
+      // layout happens to give the viewfinder
+      const scale = crop ? clamp(crop.sw / w, 2, 4) : 2;
+
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
       ctx.save();
       ctx.scale(scale, scale);
 
-      // Mirror front-facing camera
-      if (facingMode === 'user') {
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(video, 0, 0, w, h);
-        ctx.setTransform(scale, 0, 0, scale, 0, 0);
-      } else {
-        ctx.drawImage(video, 0, 0, w, h);
-      }
+      // Photo, mirrored to match the preview, with the filter baked in
+      ctx.save();
+      if (canFilter) ctx.filter = FILTERS[selectedFilter] || 'none';
+      if (mirrored) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+      if (crop) ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, w, h);
+      else ctx.drawImage(video, 0, 0, w, h);
+      ctx.restore();
 
-      // Draw stickers
+      // Stickers, anchored top-left like the DOM ones
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.shadowColor = 'rgba(0,0,0,.5)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
       stickers.forEach(s => {
-        ctx.font = s.size + 'px serif';
-        ctx.fillText(s.emoji, s.x, s.y + s.size * 0.9);
+        ctx.font = s.size + 'px ' + STICKER_FONT;
+        ctx.fillText(s.emoji, s.x, s.y);
       });
+      ctx.restore();
 
-      // Draw caption
+      // Caption, wrapped the way the overlay wraps it
       const caption = captionInput.value.trim();
       if (caption) {
-        ctx.font = 'bold 18px "IBM Plex Mono", monospace';
+        ctx.save();
+        ctx.font = 'bold ' + CAPTION_SIZE + 'px "IBM Plex Mono", monospace';
         ctx.fillStyle = captionColor;
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
         ctx.shadowColor = 'rgba(0,0,0,0.9)';
         ctx.shadowBlur = 10;
-        ctx.fillText(caption, w / 2, h - 24);
-        ctx.shadowBlur = 0;
+        const lines = wrapText(ctx, caption, w - 40);
+        lines.forEach((line, i) => {
+          const up = (lines.length - 1 - i) * CAPTION_LEAD;
+          ctx.fillText(line, w / 2, h - CAPTION_BOTTOM - up);
+        });
+        ctx.restore();
       }
 
       // Draw frame
       drawFrame(ctx, selectedFrame, w, h);
       ctx.restore();
 
-      resolve(canvas.toDataURL('image/png'));
+      canvas.toBlob(blob => {
+        if (blob) resolve(URL.createObjectURL(blob));
+        else reject(new Error('Could not encode the photo'));
+      }, 'image/png');
     });
   }
 
@@ -407,30 +658,36 @@
     };
     if (frame === 'none') return;
     if (colors[frame]) {
+      // 16px to match the preview's inset shadow
       ctx.strokeStyle = colors[frame];
-      ctx.lineWidth = 18;
-      ctx.strokeRect(9, 9, w - 18, h - 18);
+      ctx.lineWidth = 16;
+      ctx.strokeRect(8, 8, w - 16, h - 16);
     } else if (frame === 'summit') {
+      ctx.save();
       const g = ctx.createLinearGradient(0, 0, w, h);
       g.addColorStop(0, '#44b3fe');
       g.addColorStop(0.5, '#a759ff');
       g.addColorStop(1, '#fc9907');
       ctx.strokeStyle = g;
-      ctx.lineWidth = 18;
-      ctx.strokeRect(9, 9, w - 18, h - 18);
+      ctx.lineWidth = 16;
+      ctx.strokeRect(8, 8, w - 16, h - 16);
+      // Footer sits below the caption line. At 40px tall it covered it.
       ctx.fillStyle = '#161c24';
-      ctx.fillRect(0, h - 40, w, 40);
-      ctx.font = 'bold 11px "IBM Plex Mono", monospace';
+      ctx.fillRect(0, h - 20, w, 20);
+      ctx.font = 'bold 12px "IBM Plex Mono", monospace';
       ctx.fillStyle = '#44b3fe';
       ctx.textAlign = 'center';
-      ctx.fillText('AWS SCD \u00b7 SOUTH SUMMIT 2026', w / 2, h - 14);
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('AWS SCD \u00b7 SOUTH SUMMIT 2026', w / 2, h - 6);
+      ctx.restore();
     } else if (frame === 'pixel') {
-      ctx.strokeStyle = '#161c24';
-      ctx.lineWidth = 14;
-      ctx.strokeRect(7, 7, w - 14, h - 14);
+      // Blue outside, dark band inside, same order as the preview
       ctx.strokeStyle = '#44b3fe';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(3, 3, w - 6, h - 6);
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, w - 4, h - 4);
+      ctx.strokeStyle = '#161c24';
+      ctx.lineWidth = 12;
+      ctx.strokeRect(10, 10, w - 20, h - 20);
 
     } else if (frame === 'blueprint') {
       // Drafting sheet: grid, ink rail, tick marks, title block
@@ -500,28 +757,28 @@
       bracket(q, h - q, 1, -1);
       bracket(w - q, h - q, -1, -1);
 
-      // Title block, only when it fits above the face area
-      const bfs = Math.max(11, Math.round(Math.min(w, h) * 0.027));
-      const bph = Math.round(bfs * 1.9);
-      const bpy = b + kl + 4;
-      if (bpy + bph <= h * 0.10) {
-        ctx.font = 'bold ' + bfs + 'px "IBM Plex Mono", monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
-        const tag   = 'SCD · SS 2026';
-        const sheet = 'SHEET 01';
-        const tw    = ctx.measureText(tag).width;
-        const sw    = ctx.measureText(sheet).width;
-        const pad   = Math.round(bfs * 0.8);
-        const tbase = bpy + Math.round(bph * 0.68);
-        ctx.fillStyle = 'rgba(14,20,32,.92)';
-        ctx.fillRect(b + kl + 4, bpy, tw + pad * 2, bph);
-        ctx.fillRect(w - b - kl - 4 - (sw + pad * 2), bpy, sw + pad * 2, bph);
-        ctx.fillStyle = cyan;
-        ctx.fillText(tag, b + kl + 4 + pad, tbase);
-        ctx.fillStyle = '#fc9907';
-        ctx.fillText(sheet, w - b - kl - 4 - sw - pad, tbase);
-      }
+      // Title block. Sized to fit the top band at any viewfinder size, so it
+      // always shows up in the photo and not just in the preview.
+      const bfs   = Math.max(9, Math.round(Math.min(w, h) * 0.027));
+      const bph   = Math.round(bfs * 1.7);
+      const bpy   = b + kl + 2;
+      const bpx   = b + kl + 2;
+      ctx.font = 'bold ' + bfs + 'px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const tag   = 'SCD · SS 2026';
+      const sheet = 'SHEET 01';
+      const tw    = ctx.measureText(tag).width;
+      const sw    = ctx.measureText(sheet).width;
+      const pad   = Math.round(bfs * 0.7);
+      const tmid  = bpy + bph / 2;
+      ctx.fillStyle = 'rgba(14,20,32,.92)';
+      ctx.fillRect(bpx, bpy, tw + pad * 2, bph);
+      ctx.fillRect(w - bpx - (sw + pad * 2), bpy, sw + pad * 2, bph);
+      ctx.fillStyle = cyan;
+      ctx.fillText(tag, bpx + pad, tmid);
+      ctx.fillStyle = '#fc9907';
+      ctx.fillText(sheet, w - bpx - sw - pad, tmid);
       ctx.restore();
 
     } else if (frame === 'badge') {
@@ -817,10 +1074,14 @@
   }
 
   async function composeStrip(shots) {
-    const stripW = 340;
-    const thumbH = 255;
-    const pad = 12;
-    const labelH = 52;
+    // Rendered at 3x. The old 340px strip was too small to keep or print,
+    // so every measurement below scales off k.
+    const k = 3;
+    const stripW = 340 * k;
+    const pad    = 12 * k;
+    const labelH = 52 * k;
+    const thumbW = stripW - pad * 2;
+    const thumbH = Math.round(thumbW * 3 / 4);   // the shots are 4:3, keep them that way
     const totalH = shots.length * (thumbH + pad) + pad + labelH;
 
     const sc = document.createElement('canvas');
@@ -833,11 +1094,11 @@
 
     // Grid lines bg
     sctx.strokeStyle = 'rgba(68,179,254,0.07)';
-    sctx.lineWidth = 1;
-    for (let y = 0; y < totalH; y += 26) {
+    sctx.lineWidth = k;
+    for (let y = 0; y < totalH; y += 26 * k) {
       sctx.beginPath(); sctx.moveTo(0, y); sctx.lineTo(stripW, y); sctx.stroke();
     }
-    for (let x = 0; x < stripW; x += 26) {
+    for (let x = 0; x < stripW; x += 26 * k) {
       sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, totalH); sctx.stroke();
     }
 
@@ -845,14 +1106,15 @@
 
     loadedImgs.forEach((img, i) => {
       const y = pad + i * (thumbH + pad);
-      sctx.drawImage(img, pad, y, stripW - pad * 2, thumbH);
+      sctx.drawImage(img, pad, y, thumbW, thumbH);
       // Mini brand label
       sctx.fillStyle = 'rgba(22,28,36,0.85)';
-      sctx.fillRect(pad, y, 92, 20);
-      sctx.font = 'bold 9px "IBM Plex Mono", monospace';
+      sctx.fillRect(pad, y, 92 * k, 20 * k);
+      sctx.font = 'bold ' + (9 * k) + 'px "IBM Plex Mono", monospace';
       sctx.fillStyle = '#44b3fe';
       sctx.textAlign = 'left';
-      sctx.fillText('SCD SS 2026', pad + 8, y + 14);
+      sctx.textBaseline = 'alphabetic';
+      sctx.fillText('SCD SS 2026', pad + 8 * k, y + 14 * k);
     });
 
     // Footer bar
@@ -862,76 +1124,67 @@
     const cols = ['#44b3fe','#07e383','#a759ff','#fc9907','#fe57ea'];
     cols.forEach((c, i) => {
       sctx.fillStyle = c;
-      sctx.fillRect(i * (stripW / cols.length), fy, stripW / cols.length, 4);
+      sctx.fillRect(i * (stripW / cols.length), fy, stripW / cols.length, 4 * k);
     });
-    sctx.font = 'bold 10px "IBM Plex Mono", monospace';
+    sctx.font = 'bold ' + (10 * k) + 'px "IBM Plex Mono", monospace';
     sctx.fillStyle = '#44b3fe';
     sctx.textAlign = 'center';
-    sctx.fillText('AWS SCD \u00b7 SOUTH SUMMIT 2026', stripW / 2, fy + 24);
-    sctx.font = '9px "IBM Plex Mono", monospace';
+    sctx.fillText('AWS SCD \u00b7 SOUTH SUMMIT 2026', stripW / 2, fy + 24 * k);
+    sctx.font = (9 * k) + 'px "IBM Plex Mono", monospace';
     sctx.fillStyle = '#5b6584';
-    sctx.fillText('Cloud \u00d7 AI: Build. Power. Lead.', stripW / 2, fy + 40);
+    sctx.fillText('Cloud \u00d7 AI: Build. Power. Lead.', stripW / 2, fy + 40 * k);
 
-    return sc.toDataURL('image/png');
+    return new Promise((resolve, reject) => {
+      sc.toBlob(blob => {
+        if (blob) resolve(URL.createObjectURL(blob));
+        else reject(new Error('Could not encode the strip'));
+      }, 'image/png');
+    });
   }
 
-  function showResult(dataUrl) {
+  function showResult(url) {
+    const token = ++resultToken;
     const img = new Image();
     img.onload = () => {
+      if (token !== resultToken) return;   // a newer photo already won
       canvas.width  = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
       canvas.hidden  = false;
       video.hidden   = true;
+      setViewfinderMode('result');
       btnRetake.hidden   = false;
       btnDownload.hidden = false;
       btnCapture.hidden  = true;
       btnCapture.disabled = false;
-      btnDownload.dataset.url = dataUrl;
+      btnDownload.dataset.url = url;
     };
-    img.src = dataUrl;
+    img.onerror = () => {
+      if (token !== resultToken) return;
+      // Fall back to the live view rather than leaving no buttons on screen
+      console.error('Could not display the photo');
+      canvas.hidden = true;
+      video.hidden  = false;
+      setViewfinderMode('live');
+      btnRetake.hidden   = true;
+      btnDownload.hidden = true;
+      btnCapture.hidden  = false;
+      btnCapture.disabled = false;
+    };
+    img.src = url;
   }
 
-  function dataURItoBlob(dataURI) {
-    const byteString = atob(dataURI.split(',')[1]);
-    const mimeString = (dataURI.split(',')[0].split(':')[1] || '').split(';')[0] || 'image/png';
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    return new Blob([ab], { type: mimeString });
-  }
-
-  function downloadPhoto(dataUrl, name) {
-    if (!dataUrl) return;
+  function downloadPhoto(url, name) {
+    if (!url) return;
     const filename = (name || ('aws_scd_photo_' + Date.now())).replace(/(\.png)?$/i, '.png');
-    try {
-      const blob = dataURItoBlob(dataUrl);
-      const blobUrl = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = blobUrl;
-      a.download = filename;
-
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        if (a.parentNode) a.parentNode.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      }, 4000);
-    } catch (e) {
-      console.error('Download error:', e);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = dataUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    // Removing the anchor straight away can cancel the download
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 4000);
   }
 
   btnDownload.addEventListener('click', () => {
@@ -940,8 +1193,26 @@
   });
 
   // ── Gallery ───────────────────────────────────────────────
-  function addToGallery(dataUrl) {
-    gallery.unshift(dataUrl);
+  function addToGallery(url) {
+    gallery.unshift(url);
+    // Each entry holds a full-size PNG, so a long session at a booth would eat
+    // all the memory if the list were left to grow.
+    while (gallery.length > MAX_GALLERY) {
+      releaseUrl(gallery.pop());
+    }
+    renderGallery();
+  }
+
+  // The photo on screen still needs its URL for the Download button
+  function releaseUrl(url) {
+    if (url && btnDownload.dataset.url !== url) URL.revokeObjectURL(url);
+  }
+
+  function removeFromGallery(url) {
+    const i = gallery.indexOf(url);
+    if (i === -1) return;
+    gallery.splice(i, 1);
+    releaseUrl(url);
     renderGallery();
   }
 
@@ -976,8 +1247,7 @@
       rmBtn.textContent = 'Del';
       rmBtn.addEventListener('click', e => {
         e.stopPropagation();
-        gallery.splice(i, 1);
-        renderGallery();
+        removeFromGallery(url);
       });
 
       actions.appendChild(dlBtn);
@@ -988,7 +1258,11 @@
     });
   }
 
-  btnClearGallery.addEventListener('click', () => { gallery = []; renderGallery(); });
+  btnClearGallery.addEventListener('click', () => {
+    gallery.forEach(releaseUrl);
+    gallery = [];
+    renderGallery();
+  });
 
   // ── Init ──────────────────────────────────────────────────
   // Ensure download is hidden on load
