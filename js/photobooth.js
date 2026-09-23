@@ -33,8 +33,11 @@
 
   // ── State ─────────────────────────────────────────────────
   let stream = null;
+  let starting = false;      // getUserMedia is in flight
   let facingMode = 'user';   // what we ask for
   let mirrored = true;       // what the camera actually gave us
+  let cameraIds = [];
+  let cameraIndex = 0;
   let mode = 'strip';
   let selectedFrame = 'none';
   let selectedFilter = 'none';
@@ -152,15 +155,54 @@
     if (!navigator.mediaDevices.enumerateDevices) return;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      btnFlip.hidden = cams.length < 2;
+      cameraIds = devices.filter(d => d.kind === 'videoinput').map(d => d.deviceId).filter(Boolean);
+      const track = stream && stream.getVideoTracks()[0];
+      const current = track && track.getSettings && track.getSettings().deviceId;
+      const at = cameraIds.indexOf(current);
+      if (at !== -1) cameraIndex = at;
+      btnFlip.hidden = cameraIds.length < 2;
     } catch (e) {
       // leave the button as-is if we cannot tell
     }
   }
 
+  // Named so repeat registrations collapse instead of stacking up
+  function onTrackEnded() {
+    showCameraError('The camera was disconnected. Click "Try Again" to reconnect.');
+  }
+
+  function watchStream() {
+    if (stream) stream.getVideoTracks().forEach(t => t.addEventListener('ended', onTrackEnded));
+  }
+
+  // Everything that has to happen once the preview is actually running
+  function goLive() {
+    readFacing();
+    syncFlipButton();
+    video.hidden = false;
+    canvas.hidden = true;
+    setViewfinderMode('live');
+    clearCameraError();
+    btnRetake.hidden = true;
+    btnDownload.hidden = true;
+    btnDownload.dataset.url = '';
+    btnCapture.hidden = false;
+    btnCapture.disabled = false;
+  }
+
+  // Prefer an explicit device once we know the ids, so Flip really does change
+  // camera. facingMode alone is only a hint and desktops ignore it.
+  function videoConstraints() {
+    const c = { width: { ideal: 1280 }, height: { ideal: 960 } };
+    const id = cameraIds[cameraIndex];
+    if (id) c.deviceId = { exact: id };
+    else c.facingMode = facingMode;
+    return c;
+  }
+
   async function startCamera() {
-    if (isCapturing) return;
+    if (isCapturing || starting) return;
+    starting = true;
     clearCameraError();
 
     // Check if getUserMedia is available at all
@@ -170,58 +212,41 @@
           ? 'Camera requires HTTP/HTTPS. Open this page via a local server (e.g. VS Code Live Server).'
           : 'Your browser does not support camera access.'
       );
+      starting = false;
       return;
     }
 
     try {
       stopStream();
+      releaseShots();
 
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
-        audio: false
-      });
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(), audio: false });
 
       video.srcObject = stream;
       try {
         await video.play();
       } catch (e) {
         // Autoplay blocked. The UI would otherwise look live but never capture.
+        watchStream();
         showCameraError('Tap the viewfinder to start the camera.');
         viewfinder.addEventListener('click', resumePlayback, { once: true });
         return;
       }
 
-      // Tell us if the device is unplugged or grabbed by another app
-      stream.getVideoTracks().forEach(t => {
-        t.addEventListener('ended', () => {
-          showCameraError('The camera was disconnected. Click "Try Again" to reconnect.');
-        });
-      });
-
-      readFacing();
-      syncFlipButton();
-
-      video.hidden = false;
-      canvas.hidden = true;
-      setViewfinderMode('live');
-      clearCameraError();
-      btnRetake.hidden = true;
-      btnDownload.hidden = true;
-      btnCapture.hidden = false;
-      btnCapture.disabled = false;
-      stripShots = [];
+      watchStream();
+      goLive();
     } catch (err) {
       console.error('Camera error:', err);
       showCameraError(cameraErrorMessage(err));
+    } finally {
+      starting = false;
     }
   }
 
   async function resumePlayback() {
     try {
       await video.play();
-      video.hidden = false;
-      clearCameraError();
-      readFacing();
+      goLive();
     } catch (e) {
       showCameraError('Could not start the camera preview.');
       viewfinder.addEventListener('click', resumePlayback, { once: true });
@@ -231,6 +256,7 @@
   function stopStream() {
     if (stream) stream.getTracks().forEach(t => t.stop());
     stream = null;
+    video.srcObject = null;
   }
 
   function hasLiveStream() {
@@ -238,23 +264,36 @@
   }
 
   btnFlip.addEventListener('click', () => {
-    if (isCapturing) return;
-    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    if (isCapturing || starting) return;
+    if (cameraIds.length > 1) cameraIndex = (cameraIndex + 1) % cameraIds.length;
+    else facingMode = facingMode === 'user' ? 'environment' : 'user';
     startCamera();
   });
 
-  btnRetryCamera.addEventListener('click', startCamera);
+  // Stop the click also reaching the viewfinder's tap-to-resume listener
+  btnRetryCamera.addEventListener('click', e => {
+    e.stopPropagation();
+    startCamera();
+  });
 
   btnRetake.addEventListener('click', () => {
+    if (isCapturing) return;
     canvas.hidden = true;
-    video.hidden = false;
-    setViewfinderMode('live');
     btnRetake.hidden = true;
     btnDownload.hidden = true;
-    btnCapture.hidden = false;
-    btnCapture.disabled = false;
-    stripShots = [];
+    btnDownload.dataset.url = '';
+    releaseShots();
     updateCaptureLabel();
+    // Only go back to the live view if there is a camera to go back to
+    if (camError.hidden) {
+      video.hidden = false;
+      setViewfinderMode('live');
+      btnCapture.hidden = false;
+      btnCapture.disabled = false;
+    } else {
+      btnCapture.hidden = false;
+      btnCapture.disabled = true;
+    }
   });
 
   // ── Mode ──────────────────────────────────────────────────
@@ -274,9 +313,12 @@
   // match each other, so everything stays locked until the strip is finished.
   function setControlsLocked(locked) {
     document.querySelectorAll(
-      '.mode-btn, .frame-opt, .filter-opt, .sticker-btn, .cc-btn, #btnFlip, #btnClearStickers'
+      '.mode-btn, .frame-opt, .filter-opt, .sticker-btn, .cc-btn, #btnFlip, #btnClearStickers, #btnClearGallery'
     ).forEach(el => { el.disabled = locked; });
     captionInput.disabled = locked;
+    // Opening an old photo mid-capture hides the video, which the capture reads
+    // as a dead camera, so the gallery has to be out of reach too
+    galleryList.classList.toggle('is-locked', locked);
     if (btnCancel) btnCancel.hidden = !locked;
   }
 
@@ -494,6 +536,7 @@
         stripShots.push(await captureFrame());
         if (i < 2) await sleep(500);
       }
+      if (cancelRequested) throw new Error('Cancelled');
       const strip = await composeStrip(stripShots);
       showResult(strip);
       addToGallery(strip);
@@ -508,6 +551,7 @@
   function countdown(n) {
     return new Promise((resolve, reject) => {
       // Safety: abort if stream died during countdown
+      if (cancelRequested) { reject(new Error('Cancelled')); return; }
       if (!hasLiveStream()) { reject(new Error('No stream')); return; }
 
       countdownOverlay.hidden = false;
@@ -580,6 +624,14 @@
     return lines;
   }
 
+  // ctx.filter lengths are device pixels and ignore the transform, so a blur
+  // has to be scaled by hand or the photo comes out sharper than the preview.
+  function canvasFilter(id, scale) {
+    const f = FILTERS[id];
+    if (!f) return 'none';
+    return f.replace(/blur\(([\d.]+)px\)/g, (m, px) => 'blur(' + (parseFloat(px) * scale).toFixed(2) + 'px)');
+  }
+
   function captureFrame() {
     return new Promise((resolve, reject) => {
       if (!hasLiveStream()) { reject(new Error('No live stream')); return; }
@@ -603,7 +655,7 @@
 
       // Photo, mirrored to match the preview, with the filter baked in
       ctx.save();
-      if (canFilter) ctx.filter = FILTERS[selectedFilter] || 'none';
+      if (canFilter) ctx.filter = canvasFilter(selectedFilter, scale);
       if (mirrored) { ctx.translate(w, 0); ctx.scale(-1, 1); }
       if (crop) ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, w, h);
       else ctx.drawImage(video, 0, 0, w, h);
@@ -995,7 +1047,7 @@
       ctx.font = 'bold ' + fs + 'px "IBM Plex Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      const prompt = '> build.power.lead';
+      const prompt = '> build.grow.lead';
       ctx.fillStyle = '#07e383';
       ctx.fillText(prompt, b + fs * 0.7, base);
       ctx.fillRect(b + fs * 1.0 + ctx.measureText(prompt).width,
@@ -1132,7 +1184,7 @@
     sctx.fillText('AWS SCD \u00b7 SOUTH SUMMIT 2026', stripW / 2, fy + 24 * k);
     sctx.font = (9 * k) + 'px "IBM Plex Mono", monospace';
     sctx.fillStyle = '#5b6584';
-    sctx.fillText('Cloud \u00d7 AI: Build. Power. Lead.', stripW / 2, fy + 40 * k);
+    sctx.fillText('Cloud \u00d7 AI: Build. Grow. Lead.', stripW / 2, fy + 40 * k);
 
     return new Promise((resolve, reject) => {
       sc.toBlob(blob => {
@@ -1203,9 +1255,15 @@
     renderGallery();
   }
 
-  // The photo on screen still needs its URL for the Download button
+  // If the photo being dropped is the one on screen, take the Download button
+  // with it. Protecting the url instead just meant it was never freed.
   function releaseUrl(url) {
-    if (url && btnDownload.dataset.url !== url) URL.revokeObjectURL(url);
+    if (!url) return;
+    if (btnDownload.dataset.url === url) {
+      btnDownload.dataset.url = '';
+      btnDownload.hidden = true;
+    }
+    URL.revokeObjectURL(url);
   }
 
   function removeFromGallery(url) {

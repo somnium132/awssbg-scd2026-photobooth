@@ -1,6 +1,6 @@
 # AWS SCD South Summit 2026 — Photobooth 📸⚡
 
-An interactive, event-branded web photobooth for **AWS Student Community Day: South Summit 2026** (*Cloud × AI: Build. Power. Lead.*). Built with vanilla HTML5, CSS3, and JavaScript, designed around the South Summit visual language.
+An interactive, event-branded web photobooth for **AWS Student Community Day: South Summit 2026** (*Cloud × AI: Build. Grow. Lead.*). Built with vanilla HTML5, CSS3, and JavaScript, designed around the South Summit visual language.
 
 ![AWS SCD South Summit 2026 Photobooth](assets/Event-Primer.png)
 
