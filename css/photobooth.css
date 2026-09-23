@@ -607,7 +607,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   --cell: calc(40px * var(--vf-k, 1));
   --fs: max(9px, calc(12.96px * var(--vf-k, 1)));
   background:
-    repeating-linear-gradient(0deg, transparent 0 calc(var(--cell) - 1px), rgba(66,178,254,.10) calc(var(--cell) - 1px) var(--cell)),
+    repeating-linear-gradient(180deg, transparent 0 calc(var(--cell) - 1px), rgba(66,178,254,.10) calc(var(--cell) - 1px) var(--cell)),
     repeating-linear-gradient(90deg, transparent 0 calc(var(--cell) - 1px), rgba(66,178,254,.10) calc(var(--cell) - 1px) var(--cell));
   box-shadow:
     inset 0 0 0 var(--b) #0e1420,
@@ -640,12 +640,15 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Summit Badge */
 .frame-overlay[data-frame="badge"] {
+  --kl: max(3px, calc(2.88px * var(--vf-k, 1)));
+  --b: clamp(8px, calc(10.56px * var(--vf-k, 1)), calc(22px - var(--kl)));
+  --st: clamp(4px, calc(6px * var(--vf-k, 1)), 9px);
   background:
-    linear-gradient(90deg, #44b3fe 0 20%, #07e383 20% 40%, #a759ff 40% 60%, #fc9907 60% 80%, #fe57ea 80% 100%) bottom/100% 6px no-repeat,
+    linear-gradient(90deg, #44b3fe 0 20%, #07e383 20% 40%, #a759ff 40% 60%, #fc9907 60% 80%, #fe57ea 80% 100%) bottom/100% var(--st) no-repeat,
     linear-gradient(to bottom, transparent 78%, rgba(11,21,38,.45) 100%);
   box-shadow:
-    inset 0 0 0 11px #161c24,
-    inset 0 0 22px 11px rgba(0,0,0,.4);
+    inset 0 0 0 var(--b) #161c24,
+    inset 0 0 22px var(--b) rgba(0,0,0,.4);
 }
 .frame-overlay[data-frame="badge"]::before {
   --fs: max(10px, calc(15.5px * var(--vf-k, 1)));
@@ -671,11 +674,11 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .frame-overlay[data-frame="badge"]::after {
   content: '';
   position: absolute;
-  top: 3.6%;
+  top: 4.18%;
   left: 50%;
   transform: translateX(-50%);
   width: 13%;
-  height: 9px;
+  height: max(6px, calc(9.12px * var(--vf-k, 1)));
   border-radius: 2px;
   background: #0d111a;
   box-shadow: inset 0 0 0 2px rgba(255,255,255,.22);
@@ -687,7 +690,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   --half: calc(var(--s) / 2);
   --rail: clamp(6px, calc(8.16px * var(--vf-k, 1)), 14px);
   background:
-    repeating-linear-gradient(0deg, transparent 0 calc(var(--s) - 1px), rgba(139,150,179,.09) calc(var(--s) - 1px) var(--s)),
+    repeating-linear-gradient(180deg, transparent 0 calc(var(--s) - 1px), rgba(139,150,179,.09) calc(var(--s) - 1px) var(--s)),
     repeating-linear-gradient(90deg, transparent 0 calc(var(--s) - 1px), rgba(139,150,179,.09) calc(var(--s) - 1px) var(--s));
   box-shadow: inset 0 0 0 var(--rail) #161c24;
 }
@@ -700,16 +703,21 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     linear-gradient(#fc9907, #fc9907), linear-gradient(#44b3fe, #44b3fe),
     linear-gradient(#07e383, #07e383), linear-gradient(#a759ff, #a759ff),
     linear-gradient(#fc9907, #fc9907), linear-gradient(#07e383, #07e383),
-    linear-gradient(#fe57ea, #fe57ea);
+    linear-gradient(#fe57ea, #fe57ea), linear-gradient(#07e383, #07e383),
+    linear-gradient(#a759ff, #a759ff);
   background-repeat: no-repeat;
   background-size:
     var(--s) var(--s), var(--half) var(--half), var(--half) var(--half),
     var(--s) var(--s), var(--half) var(--half),
     var(--s) var(--s), var(--half) var(--half),
-    var(--s) var(--s), var(--half) var(--half);
+    var(--s) var(--s), var(--half) var(--half),
+    var(--half) var(--half), var(--half) var(--half);
+  /* a percentage here resolves against (box - image), so a bottom-flush box is
+     plain 100%; calc(100% - half) would sit half a cell too high */
   background-position:
     0 0, var(--s) 0, 0 var(--s), 100% 0, calc(100% - var(--s)) 0,
-    0 100%, var(--s) calc(100% - var(--half)), 100% 100%, calc(100% - var(--s)) calc(100% - var(--half));
+    0 100%, var(--s) 100%, 100% 100%, calc(100% - var(--s)) 100%,
+    0 calc(216px * var(--vf-k, 1)), 100% calc(182.4px * var(--vf-k, 1));
   filter: drop-shadow(0 2px 8px rgba(0,0,0,.45));
 }
 
@@ -741,14 +749,16 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Build Console */
 .frame-overlay[data-frame="terminal"] {
+  --kl: max(3px, calc(2.88px * var(--vf-k, 1)));
+  --b: clamp(8px, calc(10.56px * var(--vf-k, 1)), calc(22px - var(--kl)));
   background: linear-gradient(to bottom, transparent 80%, rgba(13,17,26,.45) 100%);
   box-shadow:
-    inset 0 0 0 11px #0d111a,
-    inset 0 0 22px 11px rgba(0,0,0,.45);
+    inset 0 0 0 var(--b) #0d111a,
+    inset 0 0 22px var(--b) rgba(0,0,0,.45);
 }
 .frame-overlay[data-frame="terminal"]::before {
   --fs: max(10px, calc(15.5px * var(--vf-k, 1)));
-  content: '> build.power.lead';
+  content: '> build.grow.lead';
   position: absolute;
   top: 0;
   left: 0;
@@ -768,10 +778,11 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .frame-overlay[data-frame="terminal"]::after {
   content: '';
   position: absolute;
-  top: 3.4%;
-  right: 14px;
-  width: 9px;
-  height: 9px;
+  --dot: calc(max(10px, 15.5px * var(--vf-k, 1)) * .64);
+  top: calc(4.75% - var(--dot) / 2);
+  right: calc(var(--b) + var(--dot) * .83);
+  width: var(--dot);
+  height: var(--dot);
   border-radius: 50%;
   background: #fe57ea;
   box-shadow: 0 0 8px rgba(254,87,234,.8);
@@ -790,12 +801,16 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .frame-overlay[data-frame="chipdie"]::before {
   content: '';
   position: absolute;
-  inset: calc(var(--b) - var(--t));
+  inset: 0;
   background:
-    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) top/100% var(--t) no-repeat,
-    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) bottom/100% var(--t) no-repeat,
-    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) left/var(--t) 100% no-repeat,
-    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) right/var(--t) 100% no-repeat;
+    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) 0 calc(var(--b) - var(--t)) / 100% var(--t) no-repeat,
+    repeating-linear-gradient(90deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) 0 calc(100% - var(--b) + var(--t)) / 100% var(--t) no-repeat,
+    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) calc(var(--b) - var(--t)) 0 / var(--t) 100% no-repeat,
+    repeating-linear-gradient(180deg, #44b3fe 0 var(--t), transparent var(--t) calc(var(--t) * 3)) calc(100% - var(--b) + var(--t)) 0 / var(--t) 100% no-repeat,
+    linear-gradient(#44b3fe, #44b3fe) calc(var(--b) - var(--t)) calc(var(--b) - var(--t)) / calc(var(--t) * 1.4) calc(var(--t) * 1.4) no-repeat,
+    linear-gradient(#44b3fe, #44b3fe) calc(100% - var(--b) + var(--t)) calc(var(--b) - var(--t)) / calc(var(--t) * 1.4) calc(var(--t) * 1.4) no-repeat,
+    linear-gradient(#44b3fe, #44b3fe) calc(var(--b) - var(--t)) calc(100% - var(--b) + var(--t)) / calc(var(--t) * 1.4) calc(var(--t) * 1.4) no-repeat,
+    linear-gradient(#44b3fe, #44b3fe) calc(100% - var(--b) + var(--t)) calc(100% - var(--b) + var(--t)) / calc(var(--t) * 1.4) calc(var(--t) * 1.4) no-repeat;
 }
 .frame-overlay[data-frame="chipdie"]::after {
   content: '';
@@ -841,7 +856,6 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   font-weight: 700;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0,0,0,.8), 0 0 20px rgba(0,0,0,.6);
-  letter-spacing: .04em;
   padding: 0 20px;
   transition: color .2s;
 }
@@ -1006,6 +1020,11 @@ html[data-theme="light"] .mode-btn.active {
 .gallery-item:hover {
   border-color: var(--blue);
   box-shadow: 0 4px 16px rgba(68,179,254,.15);
+}
+
+.gallery-list.is-locked {
+  pointer-events: none;
+  opacity: .45;
 }
 
 .gallery-item img {
