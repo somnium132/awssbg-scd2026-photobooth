@@ -285,6 +285,13 @@
           Download Photo
         </button>
 
+        <!-- Only used when cloud saving is switched on in js/photobooth.js -->
+        <div class="cloud-card" id="cloudCard" hidden>
+          <div class="cloud-qr" id="cloudQr"></div>
+          <p class="cloud-status" id="cloudStatus">Saving to the cloud&hellip;</p>
+        </div>
+        <p class="cloud-queue" id="cloudQueue" hidden></p>
+
       </section>
 
       <!-- RIGHT: Gallery -->
@@ -321,6 +328,7 @@
     </div>
   </footer>
 
+  <script src="js/vendor/qrcode.js"></script>
   <script src="js/photobooth.js"></script>
 </body>
 </html>

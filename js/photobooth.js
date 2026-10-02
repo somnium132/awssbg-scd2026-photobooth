@@ -5,6 +5,11 @@
 (function () {
   'use strict';
 
+  // Cloud saving + QR codes. Paste the FunctionUrl from the AWS stack
+  // (aws/photobooth-cloud.yaml) between the quotes to switch it on.
+  // Leave it empty and the photobooth works exactly as before: download only.
+  const CLOUD_UPLOAD_URL = 'https://no2jafii6dnl6mbontvezcx7bm0abobp.lambda-url.ap-southeast-1.on.aws/';
+
   const STICKER_MAP = {"rocket": "🚀", "cloud": "☁️", "lightning": "⚡", "fire": "🔥", "bulb": "💡", "robot": "🤖", "target": "🎯", "laptop": "💻", "star": "🌟", "trophy": "🏆", "party": "🎉", "brain": "🧠", "satellite": "📡", "crystal": "🔮", "gear": "⚙️", "globe": "🌐"};
 
   // CSS filter strings, shared by the live preview and the exported photo
@@ -540,6 +545,7 @@
       const strip = await composeStrip(stripShots);
       showResult(strip);
       addToGallery(strip);
+      saveToCloud(strip);
     } catch (err) {
       reportCaptureError(err);
     } finally {
@@ -593,6 +599,7 @@
     const url = await captureFrame();
     showResult(url);
     addToGallery(url);
+    saveToCloud(url);
   }
 
   // The preview shows the camera through object-fit: cover, so the photo has to
@@ -1321,6 +1328,169 @@
     gallery = [];
     renderGallery();
   });
+
+  // ── Cloud saving + QR ─────────────────────────────────────
+  // Every finished photo is also copied to Amazon S3 in the background. Once it
+  // is there, a QR code shows under the Download button so people can grab the
+  // photo on their phone. Downloading to this computer keeps working as before.
+  const cloudCard   = $('cloudCard');
+  const cloudQr     = $('cloudQr');
+  const cloudStatus = $('cloudStatus');
+  const cloudQueue  = $('cloudQueue');
+
+  const cloudPhotos = new Map();   // photo on this page -> how its upload is going
+  const uploadQueue = [];
+  let uploading = false;
+  let qrShownFor = '';
+
+  function saveToCloud(url) {
+    if (!CLOUD_UPLOAD_URL || !url) return;
+    const photo = { state: 'waiting', id: '', jpeg: null, tries: 0 };
+    cloudPhotos.set(url, photo);
+    updateCloudCard();
+
+    // Copy the picture right away. The gallery frees old photos as new ones
+    // come in, so the upload can't rely on the url still working later.
+    toJpeg(url).then(jpeg => {
+      photo.jpeg = jpeg;
+      uploadQueue.push(photo);
+      runUploads();
+    }).catch(err => {
+      console.error('Could not prepare the photo for upload:', err);
+      photo.state = 'failed';
+      updateCloudCard();
+    });
+  }
+
+  // The local download stays PNG. The cloud copy is a JPEG, which is several
+  // times smaller, so it goes up quickly even on busy event Wi-Fi.
+  function toJpeg(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.width;
+        c.height = img.height;
+        c.getContext('2d').drawImage(img, 0, 0);
+        c.toBlob(blob => blob ? resolve(blob) : reject(new Error('JPEG conversion failed')), 'image/jpeg', 0.9);
+      };
+      img.onerror = () => reject(new Error('Could not read the photo'));
+      img.src = url;
+    });
+  }
+
+  // Uploads go one at a time. If the Wi-Fi drops, the photo waits and tries
+  // again, so nothing is lost while the next person keeps taking photos.
+  async function runUploads() {
+    if (uploading) return;
+    uploading = true;
+    while (uploadQueue.length) {
+      const photo = uploadQueue[0];
+      photo.state = 'uploading';
+      updateCloudCard();
+      try {
+        photo.id = await uploadToS3(photo.jpeg);
+        photo.state = 'saved';
+        photo.jpeg = null;   // it's safe in S3 now, no need to keep it in memory
+        uploadQueue.shift();
+      } catch (err) {
+        console.warn('Upload failed, will try again:', err);
+        photo.tries++;
+        photo.state = 'retrying';
+        updateCloudCard();
+        // wait a little longer after each failed try, up to 30 seconds
+        await waitBeforeRetry(Math.min(30000, 2000 * photo.tries));
+      }
+      updateCloudCard();
+    }
+    uploading = false;
+  }
+
+  async function uploadToS3(jpeg) {
+    // 1. Ask our AWS function for a one-time upload pass. Sending it as plain
+    //    text lets the browser skip an extra round trip before the real request.
+    const res = await fetch(CLOUD_UPLOAD_URL, { method: 'POST', body: 'upload' });
+    if (!res.ok) throw new Error('Could not get an upload pass (' + res.status + ')');
+    const pass = await res.json();
+
+    // 2. Send the photo straight to S3. S3 needs the file to be the last field.
+    const form = new FormData();
+    Object.keys(pass.fields).forEach(name => form.append(name, pass.fields[name]));
+    form.append('file', jpeg, pass.id + '.jpg');
+    const upload = await fetch(pass.url, { method: 'POST', body: form });
+    if (!upload.ok) throw new Error('S3 did not accept the upload (' + upload.status + ')');
+    return pass.id;
+  }
+
+  // Waits before the next try, but goes straight away if the Wi-Fi comes back
+  function waitBeforeRetry(ms) {
+    return new Promise(resolve => {
+      const go = () => {
+        clearTimeout(timer);
+        window.removeEventListener('online', go);
+        resolve();
+      };
+      const timer = setTimeout(go, ms);
+      window.addEventListener('online', go);
+    });
+  }
+
+  function qrLink(id) {
+    return CLOUD_UPLOAD_URL.replace(/\/?$/, '/') + 'p/' + id;
+  }
+
+  // The QR card follows the Download button: whenever a photo is on screen and
+  // can be downloaded, that same photo's QR shows underneath it.
+  function updateCloudCard() {
+    if (!CLOUD_UPLOAD_URL) return;
+
+    const pending = [...cloudPhotos.values()].filter(p => p.state !== 'saved' && p.state !== 'failed').length;
+    cloudQueue.hidden = pending === 0;
+    cloudQueue.textContent = pending === 1
+      ? '1 photo still saving to the cloud…'
+      : pending + ' photos still saving to the cloud…';
+
+    const url = btnDownload.dataset.url;
+    const photo = !btnDownload.hidden && url ? cloudPhotos.get(url) : null;
+    cloudCard.hidden = !photo;
+    if (!photo) return;
+
+    if (photo.state === 'saved') {
+      if (qrShownFor !== photo.id && typeof qrcode === 'function') {
+        const qr = qrcode(0, 'M');
+        qr.addData(qrLink(photo.id));
+        qr.make();
+        cloudQr.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, alt: 'QR code to download this photo' });
+        qrShownFor = photo.id;
+      }
+      cloudCard.classList.add('is-ready');
+      cloudStatus.textContent = 'Saved! Scan with your phone camera to download this photo.';
+    } else {
+      cloudCard.classList.remove('is-ready');
+      cloudQr.innerHTML = '';
+      qrShownFor = '';
+      cloudStatus.textContent =
+        photo.state === 'retrying' ? 'Waiting for the Wi-Fi, will keep trying…' :
+        photo.state === 'failed'   ? 'Could not save this one to the cloud. Use Download instead.' :
+                                     'Saving to the cloud…';
+    }
+  }
+
+  if (CLOUD_UPLOAD_URL) {
+    // Refresh the card whenever a different photo is shown or the Download button hides
+    new MutationObserver(updateCloudCard).observe(btnDownload, {
+      attributes: true,
+      attributeFilter: ['data-url', 'hidden'],
+    });
+
+    // Closing the page while photos are still uploading would lose them, so ask first
+    window.addEventListener('beforeunload', e => {
+      if (uploadQueue.length) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+  }
 
   // ── Init ──────────────────────────────────────────────────
   // Ensure download is hidden on load
