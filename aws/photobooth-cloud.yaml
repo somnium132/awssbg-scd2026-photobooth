@@ -1,0 +1,290 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SCD South Summit 2026 photobooth. Saves every photo to a private S3 bucket and
+  serves the QR code download page. Costs a few cents for a one-day event.
+
+Parameters:
+  AllowedOrigins:
+    Type: CommaDelimitedList
+    Default: http://localhost:3000
+    Description: >-
+      The web addresses the photobooth is opened from, separated by commas, with no
+      slash at the end. Example: https://yourname.github.io,http://localhost:3000
+  KeepPhotosForDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    Description: Photos are deleted automatically after this many days. QR links stop working after that.
+
+Resources:
+  # Private bucket. Nobody can open it directly; the function below hands out
+  # short-lived links one photo at a time.
+  PhotoBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Lets the photobooth page send uploads straight to the bucket
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST]
+            AllowedOrigins: !Ref AllowedOrigins
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-old-photos
+            Status: Enabled
+            Prefix: photos/
+            ExpirationInDays: !Ref KeepPhotosForDays
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        # Only the photos folder, only reading and writing single files
+        - PolicyName: photos-folder-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub ${PhotoBucket.Arn}/photos/*
+
+  PhotoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Upload passes and QR download pages for the SCD photobooth
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 5
+      Role: !GetAtt FunctionRole.Arn
+      Environment:
+        Variables:
+          BUCKET: !Ref PhotoBucket
+      Code:
+        ZipFile: |
+          // The photobooth talks to this function in two ways:
+          //   POST /        the booth asks for a pass to upload one photo straight into S3
+          //   GET  /p/<id>  the link inside the QR code; shows the photo with a download button
+          //
+          // It signs the S3 requests itself with Node's built-in crypto, so there is
+          // nothing to install and nothing to bundle.
+
+          const crypto = require('crypto');
+
+          const BUCKET = process.env.BUCKET;
+          const REGION = process.env.AWS_REGION;
+          const HOST = BUCKET + '.s3.' + REGION + '.amazonaws.com';
+          const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;   // a photo strip is well under 2 MB as JPEG
+          const PHOTO_ID = /^\d{8}-\d{6}-[0-9a-f]{20}$/;
+
+          const hmac = (key, text, encoding) => crypto.createHmac('sha256', key).update(text, 'utf8').digest(encoding);
+          const sha256 = text => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+
+          // AWS wants the time written as 20261002T091530Z and the day as 20261002
+          function awsTime(date) {
+            const stamp = date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+            return { stamp, day: stamp.slice(0, 8) };
+          }
+
+          function signingKey(day) {
+            let key = hmac('AWS4' + process.env.AWS_SECRET_ACCESS_KEY, day);
+            key = hmac(key, REGION);
+            key = hmac(key, 's3');
+            return hmac(key, 'aws4_request');
+          }
+
+          function credential(day) {
+            return process.env.AWS_ACCESS_KEY_ID + '/' + day + '/' + REGION + '/s3/aws4_request';
+          }
+
+          // Same as encodeURIComponent, plus the few extra characters AWS wants encoded
+          function encode(text) {
+            return encodeURIComponent(text).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+          }
+
+          // A one-time pass to upload a single JPEG as photos/<id>.jpg. It expires after
+          // five minutes, and S3 refuses anything else: other names, other file types,
+          // or files bigger than the limit.
+          function uploadPass() {
+            const now = new Date();
+            const { stamp, day } = awsTime(now);
+            const id = stamp.slice(0, 8) + '-' + stamp.slice(9, 15) + '-' + crypto.randomBytes(10).toString('hex');
+
+            const fields = {
+              key: 'photos/' + id + '.jpg',
+              'Content-Type': 'image/jpeg',
+              'x-amz-algorithm': 'AWS4-HMAC-SHA256',
+              'x-amz-credential': credential(day),
+              'x-amz-date': stamp,
+            };
+            if (process.env.AWS_SESSION_TOKEN) fields['x-amz-security-token'] = process.env.AWS_SESSION_TOKEN;
+
+            const conditions = [{ bucket: BUCKET }, ['content-length-range', 1, MAX_UPLOAD_BYTES]];
+            Object.keys(fields).forEach(name => conditions.push({ [name]: fields[name] }));
+            const policy = Buffer.from(JSON.stringify({
+              expiration: new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
+              conditions,
+            })).toString('base64');
+
+            fields.policy = policy;
+            fields['x-amz-signature'] = hmac(signingKey(day), policy, 'hex');
+            return { id, url: 'https://' + HOST + '/', fields };
+          }
+
+          // A link that lets whoever has it fetch one photo for the next 15 minutes.
+          // A fresh one is made every time the QR page opens, so the QR itself never goes stale.
+          function photoLink(id, asDownload) {
+            const { stamp, day } = awsTime(new Date());
+            const path = '/photos/' + id + '.jpg';
+            const params = {
+              'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+              'X-Amz-Content-Sha256': 'UNSIGNED-PAYLOAD',
+              'X-Amz-Credential': credential(day),
+              'X-Amz-Date': stamp,
+              'X-Amz-Expires': '900',
+              'X-Amz-SignedHeaders': 'host',
+            };
+            if (process.env.AWS_SESSION_TOKEN) params['X-Amz-Security-Token'] = process.env.AWS_SESSION_TOKEN;
+            if (asDownload) params['response-content-disposition'] = 'attachment; filename="scd-south-summit-2026.jpg"';
+
+            const query = Object.keys(params).sort().map(k => encode(k) + '=' + encode(params[k])).join('&');
+            const request = ['GET', path, query, 'host:' + HOST, '', 'host', 'UNSIGNED-PAYLOAD'].join('\n');
+            const toSign = ['AWS4-HMAC-SHA256', stamp, day + '/' + REGION + '/s3/aws4_request', sha256(request)].join('\n');
+            return 'https://' + HOST + path + '?' + query + '&X-Amz-Signature=' + hmac(signingKey(day), toSign, 'hex');
+          }
+
+          const escapeHtml = text => text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+          function photoPage(id) {
+            const view = escapeHtml(photoLink(id, false));
+            const save = escapeHtml(photoLink(id, true));
+            return `<!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Your SCD South Summit 2026 photo</title>
+          <style>
+            body { margin: 0; min-height: 100vh; box-sizing: border-box; padding: 24px 16px;
+                   display: flex; flex-direction: column; align-items: center; text-align: center;
+                   background: #12182a; color: #f5f7fb; font-family: ui-monospace, Menlo, Consolas, monospace; }
+            h1 { margin: 0 0 16px; font-size: 14px; letter-spacing: .08em; color: #44b3fe; }
+            img { max-width: 100%; max-height: 68vh; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+            a { display: block; width: 100%; max-width: 320px; box-sizing: border-box; margin: 20px auto 8px;
+                padding: 14px; border-radius: 4px; background: #fc9907; color: #161c24;
+                font-weight: 700; text-decoration: none; }
+            p { max-width: 360px; font-size: 13px; line-height: 1.5; color: #a8b0c7; }
+            [hidden] { display: none; }
+          </style>
+          </head>
+          <body>
+          <h1>AWS SCD &middot; SOUTH SUMMIT 2026</h1>
+          <img id="photo" src="${view}" alt="Your photobooth photo">
+          <a id="save" href="${save}">Download photo</a>
+          <p id="tip">On iPhone you can also press and hold the photo, then tap &ldquo;Save to Photos&rdquo;.</p>
+          <p id="gone" hidden>This photo is no longer available. Photos are only kept for a while after the event.</p>
+          <script>
+            document.getElementById('photo').addEventListener('error', function () {
+              this.hidden = true;
+              document.getElementById('save').hidden = true;
+              document.getElementById('tip').hidden = true;
+              document.getElementById('gone').hidden = false;
+            });
+          </script>
+          </body>
+          </html>`;
+          }
+
+          exports.handler = async (event) => {
+            const method = event.requestContext.http.method;
+            const path = event.rawPath || '/';
+
+            if (method === 'POST' && path === '/') {
+              return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+                body: JSON.stringify(uploadPass()),
+              };
+            }
+
+            const match = path.match(/^\/p\/([^/]+)$/);
+            if (method === 'GET' && match && PHOTO_ID.test(match[1])) {
+              return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+                body: photoPage(match[1]),
+              };
+            }
+
+            return { statusCode: 404, headers: { 'Content-Type': 'text/plain' }, body: 'Not found' };
+          };
+
+  FunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PhotoFunction}
+      RetentionInDays: 7
+
+  # A public address for the function. It is free, and only the photobooth page is
+  # allowed to call it from a browser.
+  PhotoFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt PhotoFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowOrigins: !Ref AllowedOrigins
+        AllowMethods: [POST]
+        MaxAge: 300
+
+  # Since late 2025 a public function URL needs both of these permissions
+  PublicUrlAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PhotoFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  PublicInvokeAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PhotoFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  FunctionUrl:
+    Description: Paste this into CLOUD_UPLOAD_URL near the top of js/photobooth.js
+    Value: !GetAtt PhotoFunctionUrl.FunctionUrl
+  BucketName:
+    Description: The bucket the photos are saved in
+    Value: !Ref PhotoBucket

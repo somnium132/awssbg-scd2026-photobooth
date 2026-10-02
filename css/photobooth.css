@@ -477,6 +477,49 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
   box-shadow: 0 10px 28px -6px rgba(68,179,254,.45);
 }
 
+/* Cloud saving + QR (only shows when cloud saving is switched on) */
+.cloud-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+}
+
+/* QR codes scan best as dark squares on white, whatever the theme */
+.cloud-qr {
+  display: none;
+  flex: none;
+  width: 132px;
+  height: 132px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 4px;
+}
+.cloud-card.is-ready .cloud-qr { display: block; }
+.cloud-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cloud-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.cloud-queue {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Center / Viewfinder */
 .pb-center {
   display: flex;
