@@ -8,7 +8,7 @@
   // Cloud saving + QR codes. Paste the FunctionUrl from the AWS stack
   // (aws/photobooth-cloud.yaml) between the quotes to switch it on.
   // Leave it empty and the photobooth works exactly as before: download only.
-  const CLOUD_UPLOAD_URL = ' https://eprrn3z2gp3dpxutpyqdcxwp4i0hgyho.lambda-url.ap-southeast-1.on.aws/';
+  const CLOUD_UPLOAD_URL = 'https://eprrn3z2gp3dpxutpyqdcxwp4i0hgyho.lambda-url.ap-southeast-1.on.aws/';
 
   const STICKER_MAP = {"rocket": "🚀", "cloud": "☁️", "lightning": "⚡", "fire": "🔥", "bulb": "💡", "robot": "🤖", "target": "🎯", "laptop": "💻", "star": "🌟", "trophy": "🏆", "party": "🎉", "brain": "🧠", "satellite": "📡", "crystal": "🔮", "gear": "⚙️", "globe": "🌐"};
 
@@ -182,6 +182,7 @@
 
   // Everything that has to happen once the preview is actually running
   function goLive() {
+    resultToken++;   // same as Retake: drop any photo that's still loading
     readFacing();
     syncFlipButton();
     video.hidden = false;
@@ -283,6 +284,7 @@
 
   btnRetake.addEventListener('click', () => {
     if (isCapturing) return;
+    resultToken++;   // a photo still loading must not pop back up after this
     canvas.hidden = true;
     btnRetake.hidden = true;
     btnDownload.hidden = true;
@@ -1269,6 +1271,9 @@
     if (btnDownload.dataset.url === url) {
       btnDownload.dataset.url = '';
       btnDownload.hidden = true;
+      // The photo on screen was just deleted, so go back to the camera rather
+      // than leave it showing with no buttons
+      if (!canvas.hidden) btnRetake.click();
     }
     URL.revokeObjectURL(url);
   }
@@ -1337,10 +1342,16 @@
   // To keep it quick, the booth always has an upload pass ready before the photo
   // is taken. The pass carries the photo's id, so the QR can go on screen the
   // moment the photo does while the upload finishes in the background.
+  //
+  // A photo keeps the same id from start to finish (even through Wi-Fi drops or
+  // a page refresh), so the QR someone scanned always leads to their own photo.
   const cloudCard   = $('cloudCard');
   const cloudQr     = $('cloudQr');
   const cloudStatus = $('cloudStatus');
   const cloudQueue  = $('cloudQueue');
+
+  // Tidy up whatever was pasted in: stray spaces would end up inside the QR code
+  const cloudUrl = CLOUD_UPLOAD_URL.trim() ? CLOUD_UPLOAD_URL.trim().replace(/\/?$/, '/') : '';
 
   const cloudPhotos = new Map();   // photo on this page -> how its upload is going
   const uploadQueue = [];
@@ -1348,22 +1359,31 @@
   let qrShownFor = '';
   let sparePass = null;            // a pass fetched ahead of time for the next photo
   let spareRequest = null;         // the request for that pass while it's on its way
+  let warnedAboutOrigin = false;
+
+  function newCloudPhoto() {
+    return {
+      key: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10),
+      state: 'waiting', id: '', renewKey: '', pass: null, jpeg: null,
+      tries: 0, nextTry: 0, problem: '', passRequest: null,
+    };
+  }
 
   function saveToCloud(url) {
-    if (!CLOUD_UPLOAD_URL || !url) return;
-    const photo = { state: 'waiting', id: '', pass: null, jpeg: null, tries: 0, problem: '' };
+    if (!cloudUrl || !url) return;
+    const photo = newCloudPhoto();
     cloudPhotos.set(url, photo);
 
     // Hand the photo its pass straight away so its QR can show right now
     photo.passRequest = takePass()
       .then(pass => { if (!photo.pass) givePass(photo, pass); })
-      .catch(err => { photo.problem = err.kind || 'network'; updateCloudCard(); });
+      .catch(err => { photo.problem = err.kind === 'setup' ? 'setup' : 'network'; updateCloudCard(); });
     updateCloudCard();
 
-    // Copy the picture right away. The gallery frees old photos as new ones
-    // come in, so the upload can't rely on the url still working later.
     toJpeg(url).then(jpeg => {
       photo.jpeg = jpeg;
+      keepPending(photo);
+      photo.nextTry = 0;
       uploadQueue.push(photo);
       runUploads();
     }).catch(err => {
@@ -1376,39 +1396,69 @@
   function givePass(photo, pass) {
     photo.pass = pass;
     photo.id = pass.id;
+    if (pass.renewKey) photo.renewKey = pass.renewKey;
     photo.problem = '';
+    if (photo.jpeg) keepPending(photo);   // remember the id too, in case the page closes
     updateCloudCard();
   }
 
   // The local download stays PNG. The cloud copy is a JPEG, which is several
   // times smaller, so it goes up quickly even on busy event Wi-Fi.
-  function toJpeg(url) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = img.width;
-        c.height = img.height;
-        c.getContext('2d').drawImage(img, 0, 0);
-        c.toBlob(blob => blob ? resolve(blob) : reject(new Error('JPEG conversion failed')), 'image/jpeg', 0.9);
-      };
-      img.onerror = () => reject(new Error('Could not read the photo'));
-      img.src = url;
-    });
+  async function toJpeg(url) {
+    // Grab the photo's bytes first. After that it doesn't matter if the gallery
+    // frees the url (it does that to old photos as new ones come in).
+    const png = await (await fetch(url)).blob();
+    // Converting can fail when the computer is short on memory, so give it a
+    // couple more goes before giving up
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await pngToJpeg(png);
+      } catch (err) {
+        if (attempt >= 3) throw err;
+        await sleep(1000 * attempt);
+      }
+    }
   }
 
-  // Asks our AWS function for an upload pass. Sending it as plain text lets the
-  // browser skip an extra round trip before the real request.
-  async function requestPass() {
+  async function pngToJpeg(png) {
+    const copy = URL.createObjectURL(png);
+    try {
+      const img = await loadImage(copy);
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const x = c.getContext('2d');
+      // JPEG has no see-through pixels (the Glow filter leaves some at the edges),
+      // so give it the same dark background the photo is shown on
+      x.fillStyle = '#0d111a';
+      x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(img, 0, 0);
+      return await new Promise((resolve, reject) => {
+        c.toBlob(blob => blob ? resolve(blob) : reject(new Error('JPEG conversion failed')), 'image/jpeg', 0.9);
+      });
+    } finally {
+      URL.revokeObjectURL(copy);
+    }
+  }
+
+  // Asks our AWS function for an upload pass: for a new photo, or (with `ask`)
+  // a fresh pass for a photo that already has an id. Sending it as plain text
+  // lets the browser skip an extra round trip before the real request.
+  async function requestPass(ask) {
     let res;
     try {
-      res = await fetch(CLOUD_UPLOAD_URL, { method: 'POST', body: 'upload', signal: timeLimit(10000) });
+      res = await fetch(cloudUrl, {
+        method: 'POST',
+        body: ask ? JSON.stringify(ask) : 'upload',
+        signal: timeLimit(10000),
+      });
     } catch (err) {
       throw uploadProblem('network', err.message);
     }
     // 403 or 404 means the AWS function isn't there: it was deleted, or the
     // address in CLOUD_UPLOAD_URL is wrong. That's a setup problem, not the Wi-Fi.
     if (res.status === 403 || res.status === 404) throw uploadProblem('setup', 'Upload link answered ' + res.status);
+    if (res.status === 400) throw uploadProblem('refused', 'The upload link would not renew this photo');
     if (!res.ok) throw uploadProblem('network', 'Upload link answered ' + res.status);
     const pass = await res.json();
     pass.goodUntil = Date.now() + (pass.validFor || 300) * 1000;
@@ -1436,51 +1486,93 @@
     return passGoodFor(pass, 60 * 1000) ? pass : requestPass();
   }
 
-  // Uploads go one at a time. If the Wi-Fi drops, the photo waits and tries
-  // again, so nothing is lost while the next person keeps taking photos.
+  // A working pass for this photo. Its id stays the same whenever possible, so
+  // the QR it already showed keeps pointing at it.
+  async function passFor(photo) {
+    await photo.passRequest;   // the pass asked for when the photo was taken
+    if (passGoodFor(photo.pass, 30 * 1000)) return photo.pass;
+    if (photo.id && photo.renewKey) {
+      try {
+        return await requestPass({ renew: photo.id, key: photo.renewKey });
+      } catch (err) {
+        // Only start over with a new id if the server said no (for example the
+        // AWS stack was rebuilt). For anything else, try again later.
+        if (err.kind !== 'refused') throw err;
+        // That id can never be uploaded now, so take its QR off the screen
+        // until the new one is ready
+        photo.id = '';
+        photo.renewKey = '';
+        photo.pass = null;
+        updateCloudCard();
+      }
+    }
+    return takePass();
+  }
+
+  // Photos upload one at a time. When one fails it waits a little longer each
+  // time (up to 30 seconds), and the others carry on meanwhile, so a single
+  // problem photo can't hold everyone else up.
   async function runUploads() {
     if (uploading) return;
     uploading = true;
+    try {
+      await uploadAll();
+    } finally {
+      // whatever happens, don't leave the queue thinking it's still busy
+      uploading = false;
+    }
+  }
+
+  async function uploadAll() {
     while (uploadQueue.length) {
-      const photo = uploadQueue[0];
+      const now = Date.now();
+      const photo = uploadQueue.find(p => p.nextTry <= now);
+      if (!photo) {
+        await waitBeforeRetry(Math.min(...uploadQueue.map(p => p.nextTry)) - now);
+        continue;
+      }
       photo.state = 'uploading';
       updateCloudCard();
       try {
-        await photo.passRequest;   // the pass asked for when the photo was taken
-        if (!passGoodFor(photo.pass, 30 * 1000)) givePass(photo, await takePass());
-        await sendToS3(photo.pass, photo.jpeg);
+        const pass = await passFor(photo);
+        if (pass !== photo.pass) givePass(photo, pass);
+        await sendToS3(pass, photo.jpeg, photo.tries);
         photo.state = 'saved';
         photo.problem = '';
         photo.jpeg = null;   // it's safe in S3 now, no need to keep it in memory
-        uploadQueue.shift();
+        uploadQueue.splice(uploadQueue.indexOf(photo), 1);
+        forgetPending(photo);
       } catch (err) {
         console.warn('Upload failed, will try again:', err);
-        // If S3 turned the pass down, the next try gets a fresh one (and a new
-        // QR to match). After a dropped connection the same pass still works.
-        if (err.kind === 'rejected') {
-          photo.pass = null;
-          photo.id = '';
-        }
+        // S3 won't take this pass again, so the next try renews it (same id, same QR)
+        if (err.kind === 'rejected') photo.pass = null;
         photo.problem = err.kind === 'setup' ? 'setup' : 'network';
-        photo.tries++;
         photo.state = 'retrying';
-        updateCloudCard();
-        // wait a little longer after each failed try, up to 30 seconds
-        await waitBeforeRetry(Math.min(30000, 2000 * photo.tries));
+        photo.tries++;
+        // A blocked request looks just like a dropped connection to the page. If
+        // it keeps happening while online, point whoever runs the booth at the likely cause.
+        if (photo.problem === 'network' && photo.tries === 3 && navigator.onLine && !warnedAboutOrigin) {
+          warnedAboutOrigin = true;
+          console.warn('Uploads keep failing although this computer is online. If the internet is fine, check that ' +
+            location.origin + ' is listed in AllowedOrigins when deploying aws/photobooth-cloud.yaml.');
+        }
+        photo.nextTry = Date.now() + Math.min(30000, 2000 * photo.tries);
       }
       updateCloudCard();
     }
-    uploading = false;
   }
 
   // Sends the photo straight to S3. S3 needs the file to be the last field.
-  async function sendToS3(pass, jpeg) {
+  async function sendToS3(pass, jpeg, tries) {
     const form = new FormData();
     Object.keys(pass.fields).forEach(name => form.append(name, pass.fields[name]));
     form.append('file', jpeg, pass.id + '.jpg');
+    // Allow for a slow connection (about 16 KB a second) and give more time on
+    // each retry, so a big strip on weak Wi-Fi isn't cut off forever
+    const allow = (30 + jpeg.size / 16000) * 1000 * Math.min((tries || 0) + 1, 5);
     let res;
     try {
-      res = await fetch(pass.url, { method: 'POST', body: form, signal: timeLimit(60000) });
+      res = await fetch(pass.url, { method: 'POST', body: form, signal: timeLimit(allow) });
     } catch (err) {
       throw uploadProblem('network', err.message);
     }
@@ -1497,7 +1589,12 @@
 
   // Gives up on a request that hangs, so one stuck upload can't hold up the rest
   function timeLimit(ms) {
-    return window.AbortSignal && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined;
+    if (window.AbortSignal && AbortSignal.timeout) return AbortSignal.timeout(ms);
+    if (!window.AbortController) return undefined;
+    // older browsers: same thing, done by hand
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), ms);
+    return stop.signal;
   }
 
   // Waits before the next try, but goes straight away if the Wi-Fi comes back
@@ -1508,19 +1605,85 @@
         window.removeEventListener('online', go);
         resolve();
       };
-      const timer = setTimeout(go, ms);
+      const timer = setTimeout(go, Math.max(0, ms));
       window.addEventListener('online', go);
     });
   }
 
+  // ── Pending uploads survive a refresh ──
+  // Photos that haven't reached S3 yet are also kept in the browser's own storage
+  // (IndexedDB). If the page is refreshed, crashes or the laptop runs out of
+  // battery, they carry on uploading the next time the photobooth is opened on
+  // this computer, with the same ids, so their QR codes still work.
+  const pendingDb = cloudUrl && window.indexedDB ? openPendingDb() : Promise.resolve(null);
+
+  function openPendingDb() {
+    return new Promise(resolve => {
+      let req;
+      try {
+        req = indexedDB.open('scd-photobooth', 1);
+      } catch (e) {
+        resolve(null);
+        return;
+      }
+      req.onupgradeneeded = () => req.result.createObjectStore('uploads', { keyPath: 'key' });
+      req.onsuccess = () => resolve(req.result);
+      // e.g. storage switched off in this browser: keep going without it
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    });
+  }
+
+  function pendingStore(mode, work) {
+    return pendingDb.then(db => {
+      if (!db) return null;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction('uploads', mode);
+          const req = work(tx.objectStore('uploads'));
+          tx.oncomplete = () => resolve(req ? req.result : null);
+          tx.onerror = tx.onabort = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  function keepPending(photo) {
+    return pendingStore('readwrite', store => store.put({
+      key: photo.key, jpeg: photo.jpeg, id: photo.id, renewKey: photo.renewKey, pass: photo.pass,
+    }));
+  }
+
+  function forgetPending(photo) {
+    return pendingStore('readwrite', store => store.delete(photo.key));
+  }
+
+  // Picks up anything left over from last time the page was open
+  function resumePending() {
+    pendingStore('readonly', store => store.getAll()).then(saved => {
+      (saved || []).forEach(rec => {
+        if (!rec || !rec.jpeg || cloudPhotos.has('pending:' + rec.key)) return;
+        const photo = Object.assign(newCloudPhoto(), {
+          key: rec.key, jpeg: rec.jpeg, id: rec.id || '', renewKey: rec.renewKey || '', pass: rec.pass || null,
+        });
+        cloudPhotos.set('pending:' + rec.key, photo);
+        uploadQueue.push(photo);
+      });
+      updateCloudCard();
+      runUploads();
+    });
+  }
+
   function qrLink(id) {
-    return CLOUD_UPLOAD_URL.replace(/\/?$/, '/') + 'p/' + id;
+    return cloudUrl + 'p/' + id;
   }
 
   // The QR card follows the Download button: whenever a photo is on screen and
   // can be downloaded, that same photo's QR shows underneath it.
   function updateCloudCard() {
-    if (!CLOUD_UPLOAD_URL) return;
+    if (!cloudUrl) return;
 
     const pending = [...cloudPhotos.values()].filter(p => p.state !== 'saved' && p.state !== 'failed').length;
     cloudQueue.hidden = pending === 0;
@@ -1535,14 +1698,22 @@
 
     // The QR goes up as soon as the photo has an id, even while it's uploading.
     // If someone scans early, the phone page waits for the photo to arrive.
-    const showQr = !!photo.id && photo.state !== 'failed';
-    if (showQr && qrShownFor !== photo.id && typeof qrcode === 'function') {
-      const qr = qrcode(0, 'M');
-      qr.addData(qrLink(photo.id));
-      qr.make();
-      cloudQr.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, alt: 'QR code to download this photo' });
-      qrShownFor = photo.id;
-    } else if (!showQr) {
+    let showQr = !!photo.id && photo.state !== 'failed' && typeof qrcode === 'function';
+    if (showQr && qrShownFor !== photo.id) {
+      try {
+        const qr = qrcode(0, 'M');
+        qr.addData(qrLink(photo.id));
+        qr.make();
+        // margin 16 = a white border four squares wide, which phone cameras need
+        cloudQr.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 16, alt: 'QR code to download this photo' });
+        qrShownFor = photo.id;
+      } catch (err) {
+        // never leave the previous photo's QR up by mistake
+        console.error('Could not draw the QR code:', err);
+        showQr = false;
+      }
+    }
+    if (!showQr) {
       cloudQr.innerHTML = '';
       qrShownFor = '';
     }
@@ -1555,6 +1726,12 @@
     if (photo.state === 'failed') return 'Could not save this one to the cloud. Use Download instead.';
     if (photo.problem === 'setup') return 'Cloud saving isn\'t working: the upload link isn\'t set up. Download still works.';
     if (photo.problem === 'network') {
+      // Online but still failing: it might not be the Wi-Fi at all
+      if (navigator.onLine && photo.tries >= 3) {
+        return photo.id
+          ? 'Can\'t reach the cloud right now. This photo is kept, and its QR will work once it uploads.'
+          : 'Can\'t reach the cloud right now. This photo is kept and will upload as soon as it can.';
+      }
       return photo.id
         ? 'Waiting for the Wi-Fi. This QR will work as soon as the photo is uploaded.'
         : 'Waiting for the Wi-Fi, will keep trying…';
@@ -1562,29 +1739,38 @@
     return photo.id ? 'Uploading… you can scan it already.' : 'Saving to the cloud…';
   }
 
-  if (CLOUD_UPLOAD_URL) {
+  if (cloudUrl) {
     // Refresh the card whenever a different photo is shown or the Download button hides
     new MutationObserver(updateCloudCard).observe(btnDownload, {
       attributes: true,
       attributeFilter: ['data-url', 'hidden'],
     });
 
-    // Closing the page while photos are still uploading would lose them, so ask first
+    // Photos still on their way are kept safe for next time, but it's better
+    // not to close the page in the middle of uploading, so ask first
     window.addEventListener('beforeunload', e => {
-      if (uploadQueue.length) {
+      const busy = [...cloudPhotos.values()].some(p => p.state !== 'saved' && p.state !== 'failed');
+      if (busy) {
         e.preventDefault();
         e.returnValue = '';
       }
     });
 
-    // Have a pass ready before the first photo, swap it for a fresh one before
-    // it runs out, and grab one as soon as the Wi-Fi comes back
+    // When the Wi-Fi comes back, try everything again straight away
+    window.addEventListener('online', () => {
+      uploadQueue.forEach(p => { p.nextTry = 0; });
+      refillSpare();
+    });
+
+    // Have a pass ready before the first photo and swap it for a fresh one
+    // before it runs out
     refillSpare();
     setInterval(() => {
       if (sparePass && !passGoodFor(sparePass, 5 * 60 * 1000)) sparePass = null;
       refillSpare();
     }, 60 * 1000);
-    window.addEventListener('online', refillSpare);
+
+    resumePending();
   }
 
   // ── Init ──────────────────────────────────────────────────

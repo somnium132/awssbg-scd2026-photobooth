@@ -87,6 +87,10 @@ Resources:
       Environment:
         Variables:
           BUCKET: !Ref PhotoBucket
+          KEEP_DAYS: !Ref KeepPhotosForDays
+          # The random part of this stack's id. Only people with access to the AWS
+          # account can see it, so it works as the secret behind pass renewals.
+          PASS_SECRET: !Select [2, !Split ['/', !Ref 'AWS::StackId']]
       Code:
         ZipFile: |
           // The photobooth talks to this function in two ways:
@@ -135,10 +139,23 @@ Resources:
           // taken, and still use it if the Wi-Fi drops for a bit.
           const PASS_SECONDS = 15 * 60;
 
-          function uploadPass() {
+          // Every pass comes with a renew key. Only the booth that got the pass knows
+          // it, so only that booth can get a new pass for the same photo later (after
+          // a long Wi-Fi outage, say) and the photo keeps the QR it already showed.
+          // Knowing a photo's id from its QR is not enough to replace the photo.
+          function renewKeyFor(id) {
+            return hmac(process.env.PASS_SECRET || '', 'renew:' + id, 'hex').slice(0, 32);
+          }
+
+          function sameText(a, b) {
+            const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+            return x.length === y.length && crypto.timingSafeEqual(x, y);
+          }
+
+          function uploadPass(renewId) {
             const now = new Date();
             const { stamp, day } = awsTime(now);
-            const id = stamp.slice(0, 8) + '-' + stamp.slice(9, 15) + '-' + crypto.randomBytes(10).toString('hex');
+            const id = renewId || stamp.slice(0, 8) + '-' + stamp.slice(9, 15) + '-' + crypto.randomBytes(10).toString('hex');
 
             const fields = {
               key: 'photos/' + id + '.jpg',
@@ -159,7 +176,7 @@ Resources:
             fields.policy = policy;
             fields['x-amz-signature'] = hmac(signingKey(day), policy, 'hex');
             // validFor lets the booth know when to swap a spare pass for a fresh one
-            return { id, url: 'https://' + HOST + '/', fields, validFor: PASS_SECONDS };
+            return { id, url: 'https://' + HOST + '/', fields, validFor: PASS_SECONDS, renewKey: renewKeyFor(id) };
           }
 
           // A link that lets whoever has it fetch one photo for the next 15 minutes.
@@ -197,7 +214,11 @@ Resources:
             const save = escapeHtml(photoLink(id, true));
             // The booth shows the QR before the upload has finished, so someone quick
             // can get here first. For a photo taken in the last hour, wait for it.
-            const justTaken = Date.now() - takenAt(id) < 60 * 60 * 1000;
+            // Older than that but still within the keep period, it may just be stuck
+            // on a booth that's offline, so don't call it gone.
+            const age = Date.now() - takenAt(id);
+            const justTaken = age < 60 * 60 * 1000;
+            const stillKept = age < (Number(process.env.KEEP_DAYS) || 30) * 24 * 60 * 60 * 1000;
             return `<!doctype html>
           <html lang="en">
           <head>
@@ -223,10 +244,11 @@ Resources:
           <a id="save" href="${save}">Download photo</a>
           <p id="tip">On iPhone you can also press and hold the photo, then tap &ldquo;Save to Photos&rdquo;.</p>
           <p id="wait" hidden>Your photo is still on its way&hellip; this page will update by itself.</p>
-          <p id="late" hidden>Your photo hasn&rsquo;t arrived yet. The booth may be offline, so try this link again in a few minutes.</p>
+          <p id="late" hidden>Your photo hasn&rsquo;t arrived yet. The booth may be offline, so try this link again a bit later.</p>
           <p id="gone" hidden>This photo is no longer available. Photos are only kept for a while after the event.</p>
           <script>
             var justTaken = ${justTaken};
+            var stillKept = ${stillKept};
             var tries = Number(new URLSearchParams(location.search).get('try') || 0);
             document.getElementById('photo').addEventListener('error', function () {
               this.hidden = true;
@@ -237,7 +259,7 @@ Resources:
                 document.getElementById('wait').hidden = false;
                 setTimeout(function () { location.replace(location.pathname + '?try=' + (tries + 1)); }, 3000);
               } else {
-                document.getElementById(justTaken ? 'late' : 'gone').hidden = false;
+                document.getElementById(stillKept ? 'late' : 'gone').hidden = false;
               }
             });
           </script>
@@ -250,10 +272,26 @@ Resources:
             const path = event.rawPath || '/';
 
             if (method === 'POST' && path === '/') {
+              // A plain request gets a pass for a brand-new photo. A renewal names the
+              // photo and proves it with the renew key from that photo's first pass.
+              let ask = {};
+              try {
+                const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : event.body;
+                ask = JSON.parse(raw || '{}') || {};
+              } catch (e) {
+                // "upload", or anything else that isn't JSON, is a plain request
+              }
+
+              let renewId;
+              if (ask.renew !== undefined) {
+                const ok = typeof ask.renew === 'string' && PHOTO_ID.test(ask.renew) && sameText(ask.key, renewKeyFor(ask.renew));
+                if (!ok) return { statusCode: 400, headers: { 'Content-Type': 'text/plain' }, body: 'That photo cannot be renewed' };
+                renewId = ask.renew;
+              }
               return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-                body: JSON.stringify(uploadPass()),
+                body: JSON.stringify(uploadPass(renewId)),
               };
             }
 
