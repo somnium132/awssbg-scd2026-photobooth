@@ -494,9 +494,8 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .cloud-qr {
   display: none;
   flex: none;
-  width: 132px;
-  height: 132px;
-  padding: 6px;
+  width: 168px;
+  height: 168px;
   background: #fff;
   border-radius: 4px;
 }
@@ -1090,6 +1089,13 @@ html[data-theme="light"] .mode-btn.active {
 }
 
 .gallery-item:hover .gallery-item-actions { opacity: 1; }
+
+/* Touch screens can't hover, so the Save / Del buttons would stay invisible but
+   still tappable, and a tap near the bottom of a photo could delete it.
+   Show them instead. */
+@media (hover: none) {
+  .gallery-item-actions { opacity: 1; }
+}
 
 .gallery-action-btn {
   font-family: var(--font-mono);
