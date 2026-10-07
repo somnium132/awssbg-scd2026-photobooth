@@ -524,7 +524,7 @@
   async function captureWithCountdown() {
     beginCapture();
     try {
-      await countdown(3);
+      await countdown(5);
       await takePhoto();
     } catch (err) {
       reportCaptureError(err);
@@ -539,7 +539,7 @@
     releaseShots();
     try {
       for (let i = 0; i < 3; i++) {
-        await countdown(3);
+        await countdown(5);
         stripShots.push(await captureFrame());
         if (i < 2) await sleep(500);
       }

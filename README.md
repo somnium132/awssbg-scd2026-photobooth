@@ -10,7 +10,7 @@ An interactive, event-branded web photobooth for **AWS Student Community Day: So
 
 - **Live Camera Feed & Controls**: Toggle front/back cameras (`Flip`), capture photos, and preview frames in real-time.
 - **2 Capture Modes**:
-  - **Single Photo**: Snapshot with a 3-second countdown.
+  - **Single Photo**: Snapshot with a 5-second countdown.
   - **Strip ×3**: Sequentially captures 3 photos with countdowns and composites them into a vertical AWS-branded photo strip.
 - **Custom Event Frames**:
   - **Summit Gradient** (AWS Blue, Purple, Orange gradient with footer mark)
